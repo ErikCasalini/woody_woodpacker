@@ -20,6 +20,6 @@ typedef struct s_reloc_table_info {
 	uint64_t				ent_size;
 } t_reloc_table_info;
 
-t_error print_relocations_fields(int file, t_ELF64 elf, uint64_t base_addr);
+t_error print_relocations_fields(int file, t_ELF64 elf, uint64_t base_addr);;
 
 #endif

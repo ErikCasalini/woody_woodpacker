@@ -5,8 +5,8 @@ CC := cc
 CFLAGS := -Wall -Wextra -Werror -MMD -g
 
 ASFLAGS := -Wa,--fatal-warnings
-
 LINKFLAGS := -Wl,-Ttext-segment=0x10000
+
 
 OBJ_DIR := ./bin
 

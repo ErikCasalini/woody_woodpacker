@@ -10,7 +10,7 @@
 #include "segment_mapper.h"
 #include "pt_dynamic.h"
 #include "stack_fix.h"
-#include "jump_to_interp.h"
+#include "jump_to_with_stack.h"
 
 #include <stddef.h>
 
@@ -293,7 +293,7 @@ int	main(int argc, char *argv[])
 	else {
 		entry = elf.header.entry + base_addr;
 	}
-	jump_to_with_stack(entry, (uint64_t)(argv - 1));
+	jump_to_with_stack(entry, (size_t)(argv - 1));
 
 	close(file);
 	printf("\nDONE\n");

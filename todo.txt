@@ -64,3 +64,89 @@ What dynamic linker needs :
                2ea0: argv[1]=0x7fff6c844fd0            ---------------------------|-+
                2e98: argv[0]=0x7fff6c844fcb            ---------------------------+
      0x7fff6c842e90: argc=3
+
+
+---------------------------------------------------------------------------------------------------------------------------------------
+
+packer :
+-the stub will be compiled separately from the packer's code, ensuring no absolute relocations are present. After checking that everything is good, it will be integrated to the packer binary (objcopy), in order to make it copyable fromt its own binary to the packed elf.
+-create new elf
+-if original elf is DYN, the packed elf is also DYN. The stub only needs to mmap NULL of good size to get a valid ASLR compliant chunk of memory where to store the original elf
+-if original elf is	EXEC, the packed elf is also EXEC. The packer must include a PT_LOAD that matches the base address of the original elf with enought size, the stub will mapp the original elf there
+	-also, the packer should refuse EXEC elfs with a too low/high base address. The reserved PT_LOAD must always be the first one
+-in both cases the packed elf wont contain an INTERP, nor a static/dynamic linked library. Its stub must be completely independent (no absolute relocations)
+-the original elf is stored in the last PT_LOAD in the packed elf. The PT_LOAD will start with a header (unencrypted) containing metadata for integrity check and decryption/decompression
+-if original elf is DYN its first PT_LOAD (that contains its header + PHDR) must have p_vaddr = 0
+-must copy the PT_GNU_STACK of the original elf to the packed elf (last PHDR index is ok)
+
+packer assumes :
+-Interpreter must be a valid ELF64 ET_DYN for x86-64, little-endian, with p_align <= runtime page_size for every PT_LOAD.
+
+packer checks :
+-Elf must be x86_64
+-Must have an Header
+-Must have a PHDR
+-Its PT_LOAD must be in ascending order
+-Must not have s_isuid set in permissions
+-Must be executable
+-Must be ET_DYN or ET_EXEC
+-Must be little endian
+-If ELF is ET_EXEC, its load address must not be < 0x10000 or > (0xMAX - memsize of all PT_LOADS)
+-Each PT_LOAD must have p_align equal to 0, 1, or a power of two.
+-If p_align > 1, p_vaddr % p_align must equal p_offset % p_align.
+-For ET_DYN, each PT_LOAD must have p_align <= runtime page_size.
+-If INTERP present, PT_INTERP filesz must be > 1
+
+-------------------MEMORY-------------------
+ET_EXEC:
+    PT_LOAD reservation
+    PT_LOAD header + PHDR		PF_R
+    PT_LOAD stub code			PF_R | PF_X
+    PT_LOAD stub data			PF_R | PF_W	   <--+
+	PT_LOAD blob				PF_R | PF_W		  |
+												  |
+ET_DYN:											  |
+    PT_LOAD header + PHDR		PF_R			  |
+    PT_LOAD code du stub		PF_R | PF_X		  |
+    PT_LOAD stub data			PF_R | PF_W	   <--+
+	PT_LOAD blob				PF_R | PF_W	  	  |
+												  |
+-------------------FILE--------------------		  |
+offset 0										  |
+[ELF header]									  |
+[Program headers]  -------------------------------+
+---padding---
+[stub code]
+---padding---
+[stub data]
+---padding---
+[blob header]
+[encrypted blob]
+
+----------------BLOB HEADER----------------
+magic:				"WOODY\0"
+offset:				xxx
+compressed size:	xxx
+decompressed size:	xxx
+key:				xxx
+-------------------------------------------
+
+stub :
+-find our PHDR
+-find the last PT_LOAD containing the original compressed elf and check if its header is correct
+-decrypt in place
+-if we are DYN, mmap randomly the original elf
+-if we are EXEC mmap it in the empty PT_LOAD set up by the packer
+-find its PHDR
+-map its INTERP if present. If INTERP i ET_EXEC, we refuse the execution for the moment.
+-update the stack
+-jump to INTERP or entry
+
+
+
+PROBLEMS :
+-if 2 PT_LOADS are too far one from the other, the allocation of load_zone is too big --> wontfix
+
+FIX :
+-ET_EXEC le pakcer va mettre le stub dans une adresse qui ne coincide pas avec une des PT_LOADS de l'elf. On oublie aussi le PT_LOAD de reservation, et le stub va juste pouvoir map en NO_REPLACE.
+-ET_DYN on mappe effectivement toute la zone pour s'assurer que tout rentre, on garde l'adresse retournee comme base, puis on free direct. On map chaque PT_LOAD avec comme base l'adresse gardée.
