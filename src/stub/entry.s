@@ -1,6 +1,7 @@
 .intel_syntax noprefix
 
-.text
+
+.section .text.stub_entry, "ax", @progbits
 
 .global stub_entry
 .type stub_entry, @function
@@ -10,5 +11,3 @@ stub_entry:
 	ud2
 
 .size stub_entry, .-stub_entry
-
-.section .note.GNU-stack, "", @progbits

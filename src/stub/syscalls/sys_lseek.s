@@ -10,5 +10,3 @@ sys_lseek:
 	ret
 
 .size sys_lseek, .-sys_lseek
-
-.section .note.GNU-stack, "", @progbits

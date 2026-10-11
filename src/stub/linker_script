@@ -1,0 +1,14 @@
+SECTIONS
+{
+  .stub.text :
+  {
+	*(.text.stub_entry)
+	*(.text)
+  }
+  .stub.rodata :
+  {
+	*(.rodata)
+  }
+  /DISCARD/ : { *(*) }
+}
+

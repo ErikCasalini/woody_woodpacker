@@ -1,53 +1,103 @@
-NAME := woody_woodpacker
+CC := clang
+LD := ld
 
-CC := cc
+STUB_OBJ_DIR := stub_bin
+STUB := $(STUB_OBJ_DIR)/stub.elf
+STUB_CFLAGS := -Wall -Werror -Wextra -ffreestanding -fno-stack-protector -nostdlib -fPIE -MMD
+STUB_ASFLAGS := -Xassembler --fatal-warnings													# -Xassembler tels Clang to send the following option to the assembler tool
+STUB_LDFLAGS := -static --no-dynamic-linker -T src/stub/linker_script
 
-CFLAGS := -Wall -Wextra -Werror -MMD -g
+# Packer : configuration desactivee pour l'instant.
+# PACKER_OBJ_DIR := packer_bin
+# PACKER := $(PACKER_OBJ_DIR)/packer
+# PACKER_CFLAGS := -Wall -Werror -Wextra -g
+# PACKER_ASFLAGS := -Wa,--fatal-warnings
+# PACKER_LDFLAGS := -Wl,-Ttext-segment=0x10000
 
-ASFLAGS := -Wa,--fatal-warnings
-LINKFLAGS := -Wl,-Ttext-segment=0x10000
+# Les sources communes sont compilees separement pour chaque binaire.
+COMMON_SRC := src/ft/ft_memcpy.c \
+			  src/ft/ft_memmove.c \
+			  src/ft/ft_memset.c \
+			  src/ft/ft_strlen.c
 
+STUB_SRC := src/stub/execute_packed_elf.c \
+			src/stub/entry.s \
+			src/stub/jump_to_with_stack.s \
+			src/stub/syscalls/sys_close.s \
+			src/stub/syscalls/sys_exit.s \
+			src/stub/syscalls/sys_fstat.s \
+			src/stub/syscalls/sys_lseek.s \
+			src/stub/syscalls/sys_mmap.s \
+			src/stub/syscalls/sys_mprotect.s \
+			src/stub/syscalls/sys_munmap.s \
+			src/stub/syscalls/sys_open.s \
+			src/stub/syscalls/sys_write.s
 
-OBJ_DIR := ./bin
+# PACKER_SRC := src/packer/main.c \
+#			  src/init.c \
+#			  src/heap_arena.c \
+#			  src/str_enum.c \
+#			  src/segment_mapper.c \
+#			  src/pt_dynamic.c \
+#			  src/stack_fix.c \
+#			  src/jump_to_with_stack.s
 
-SRC := main.c \
-	   str_enum.c \
-	   segment_mapper.c \
-	   pt_dynamic.c \
-	   stack_fix.c \
-	   jump_to_interp.s
+STUB_ALL_SRC := $(STUB_SRC) $(COMMON_SRC)
+# PACKER_ALL_SRC := $(PACKER_SRC) $(COMMON_SRC)
 
-OBJ := $(addprefix $(OBJ_DIR)/, $(SRC:.c=.o))
-OBJ := $(OBJ:.s=.o)
+STUB_OBJ := $(addprefix $(STUB_OBJ_DIR)/, $(STUB_ALL_SRC:src/%=%))
+STUB_OBJ := $(STUB_OBJ:.c=.o)
+STUB_OBJ := $(STUB_OBJ:.s=.o)
+STUB_DEPS := $(STUB_OBJ:.o=.d)
 
-DEPS := $(addprefix $(OBJ_DIR)/, $(SRC:.c=.d))
+# PACKER_OBJ := $(addprefix $(PACKER_OBJ_DIR)/, $(PACKER_ALL_SRC:src/%=%))
+# PACKER_OBJ := $(PACKER_OBJ:.c=.o)
+# PACKER_OBJ := $(PACKER_OBJ:.s=.o)
+# PACKER_DEPS := $(PACKER_OBJ:.o=.d)
 
-vpath %.c src
-vpath %.h src
-vpath %.s src
+all: $(STUB)
+# all: $(PACKER)
 
-$(NAME): $(OBJ)
-	$(CC) $(OBJ) $(LINKFLAGS) -o $@
+stub: $(STUB)
+# packer: $(PACKER)
 
--include $(DEPS)
+$(STUB): $(STUB_OBJ)
+	$(LD) $(STUB_OBJ) $(STUB_LDFLAGS) -o $@
 
-$(OBJ_DIR):
-	mkdir -p $(OBJ_DIR)
+# $(PACKER): $(PACKER_OBJ)
+#	$(CC) $(PACKER_OBJ) $(PACKER_LDFLAGS) -o $@
 
-$(OBJ_DIR)/%.o: %.c | $(OBJ_DIR)
-	$(CC) $(CFLAGS) -c $< -o $@
+# $(@D) -> parent directory of target
+$(STUB_OBJ_DIR)/%.o: src/%.c
+	mkdir -p $(@D)
+	$(CC) $(STUB_CFLAGS) -c $< -o $@
 
-$(OBJ_DIR)/%.o: %.s | $(OBJ_DIR)
-	$(CC) $(ASFLAGS) -c $< -o $@
+$(STUB_OBJ_DIR)/%.o: src/%.s
+	mkdir -p $(@D)
+	$(CC) $(STUB_ASFLAGS) -c $< -o $@
 
-all: $(NAME)
+# $(PACKER_OBJ_DIR)/%.o: src/%.c
+#	mkdir -p $(@D)
+#	$(CC) $(PACKER_CFLAGS) -c $< -o $@
+
+# $(PACKER_OBJ_DIR)/%.o: src/%.s
+#	mkdir -p $(@D)
+#	$(CC) $(PACKER_ASFLAGS) -c $< -o $@
+
+-include $(STUB_DEPS)
+# -include $(PACKER_DEPS)
 
 clean:
-	rm -rf $(OBJ_DIR)
+	rm -f $(STUB_OBJ) $(STUB_DEPS)
+#	rm -f $(PACKER_OBJ) $(PACKER_DEPS)
 
 fclean: clean
-	rm -f $(NAME)
+	rm -rf $(STUB_OBJ_DIR)
+#	rm -rf $(PACKER_OBJ_DIR)
 
-re: fclean all
+re:
+	$(MAKE) fclean
+	$(MAKE) all
 
-.PHONY: all clean fclean re
+# .PHONY: packer
+.PHONY: all stub clean fclean re

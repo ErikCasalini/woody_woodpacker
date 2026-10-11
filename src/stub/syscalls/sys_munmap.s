@@ -10,5 +10,3 @@ sys_munmap:
 	ret
 
 .size sys_munmap, .-sys_munmap
-
-.section .note.GNU-stack, "", @progbits

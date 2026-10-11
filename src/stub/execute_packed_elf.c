@@ -54,7 +54,7 @@ typedef struct elf_info_s
 	uint64_t	load_bias;		/* Offset added to ELF virtual addresses to obtain runtime addresses */
 } elf_info_t;
 
-const char	error[][ERR_LEN] = {
+static const char	error[][ERR_LEN] = {
 	[bad_stack] = "execute_packed_elf : illformed stack\n",
 	[bad_auxv] = "find_auxv_field : invalid auxv\n",
 	[blob_not_found] = "find_elf_blob : original elf not found or currupted\n",
@@ -64,12 +64,12 @@ const char	error[][ERR_LEN] = {
 	[bad_interp] = "load_interpreter : invalid interpreter or error during interpreter loading\n",
 };
 
-void	print_error(error_code_t code)
+static void	print_error(error_code_t code)
 {
 	sys_write(STDERR, error[code], ft_strlen(error[code]));
 }
 
-Elf64_auxv_t	*find_auxv_field(Elf64_auxv_t *auxv, uint64_t type)
+static Elf64_auxv_t	*find_auxv_field(Elf64_auxv_t *auxv, uint64_t type)
 {
 	while (auxv->a_type != 0) {
 		if (auxv->a_type == type)
@@ -80,7 +80,7 @@ Elf64_auxv_t	*find_auxv_field(Elf64_auxv_t *auxv, uint64_t type)
 	return (NULL);
 }
 
-uintptr_t	round_to_page_up(uintptr_t value, uint64_t page_size)
+static uintptr_t	round_to_page_up(uintptr_t value, uint64_t page_size)
 {
 	uintptr_t tmp;
 
@@ -91,13 +91,13 @@ uintptr_t	round_to_page_up(uintptr_t value, uint64_t page_size)
 	return (value + page_size - tmp);
 }
 
-uintptr_t	round_to_page_down(uintptr_t value, uint64_t page_size)
+static uintptr_t	round_to_page_down(uintptr_t value, uint64_t page_size)
 {
 	return (value - (value % page_size));
 }
 
 /* Copies a segment into the reserved writable memory and initializes its BSS. */
-void	*map_segment(Elf64_Phdr segment, const elf_info_t *elf, uint64_t page_size, int mmap_flag)
+static void	*map_segment(Elf64_Phdr segment, const elf_info_t *elf, uint64_t page_size, int mmap_flag)
 {
 	uintptr_t		segment_addr;	/* Runtime address of the segment's first byte */
 	uintptr_t		data_end;		/* Address right after the segment's file data, where BSS begins if present */
@@ -127,7 +127,7 @@ void	*map_segment(Elf64_Phdr segment, const elf_info_t *elf, uint64_t page_size,
 		return (NULL);
 
 	if (segment.p_filesz == 0) {
-		ft_memset((void*)data_pages.start, 0, memory_end - data_pages.start);
+		memset((void*)data_pages.start, 0, memory_end - data_pages.start);
 		return ((void*)data_pages.start);
 	}
 
@@ -142,15 +142,15 @@ void	*map_segment(Elf64_Phdr segment, const elf_info_t *elf, uint64_t page_size,
 	copy_size = data_pages.end - data_pages.start;
 	if (copy_size > elf->file_data_sz - file_offset)
 		copy_size = elf->file_data_sz - file_offset;
-	ft_memcpy((void*)data_pages.start,
+	memcpy((void*)data_pages.start,
 		(unsigned char*)elf->file_header + file_offset, copy_size);
-	ft_memset((void*)(data_pages.start + copy_size), 0,
+	memset((void*)(data_pages.start + copy_size), 0,
 		data_pages.end - data_pages.start - copy_size);
 
 	/* We continue zeroing until the end of the segment,
 	 rounded up to a page boundary */
 	if (segment.p_memsz > segment.p_filesz)
-		ft_memset((void*)data_end, 0, memory_end - data_end);
+		memset((void*)data_end, 0, memory_end - data_end);
 
 	return ((void*)data_pages.start);
 }
@@ -158,7 +158,7 @@ void	*map_segment(Elf64_Phdr segment, const elf_info_t *elf, uint64_t page_size,
 /* Apply permissions after all segments have been copied.
 For shared pages, the last PT_LOAD in program header order determines
 the final permissions. */
-int	apply_permissions(const elf_info_t *elf, uint64_t page_size)
+static int	apply_permissions(const elf_info_t *elf, uint64_t page_size)
 {
 	Elf64_Phdr		*segment;
 	mapping_range_t	range;
@@ -197,7 +197,7 @@ int	apply_permissions(const elf_info_t *elf, uint64_t page_size)
  segment, since PT_PHDR is not required by the GABI.
  Therefore, we need to determine if a PT_LOAD segment contains the file
  offset of the program header table, or set it to 0. */
-uintptr_t find_phdr_addr(const elf_info_t *elf)
+static uintptr_t find_phdr_addr(const elf_info_t *elf)
 {
 	Elf64_Phdr		*segment;
 	Elf64_Off		phdr_off;
@@ -222,7 +222,7 @@ uintptr_t find_phdr_addr(const elf_info_t *elf)
 /* Copies all PT_LOAD segments from the file image into the reserved memory,
 then applies their final page permissions. For semplicity, the packer must
 refuse elf with a total mapping range that is too large. */
-int	map_segments(elf_info_t *elf, uint64_t page_size)
+static int	map_segments(elf_info_t *elf, uint64_t page_size)
 {
 	int	first_pt_load = 1;
 
@@ -257,7 +257,7 @@ Accordingly to the GABI, PT_LOAD entries are sorted by ascending p_vaddr,
 so the first one gives the lower bound. The upper bound is the highest
 p_vaddr + p_memsz among all PT_LOAD segments, rounded up to a page
 boundary. */
-mapping_range_t	get_mapping_range(Elf64_Phdr *phdr, Elf64_Half phnum, uint64_t page_size)
+static mapping_range_t	get_mapping_range(Elf64_Phdr *phdr, Elf64_Half phnum, uint64_t page_size)
 {
 	mapping_range_t	range = {0};
 	uintptr_t	segment_end;
@@ -293,7 +293,7 @@ mapping_range_t	get_mapping_range(Elf64_Phdr *phdr, Elf64_Half phnum, uint64_t p
 }
 
 /* Same logic than map_ET_DYN() */
-int	map_ET_EXEC(elf_info_t *elf, uint64_t page_size)
+static int	map_ET_EXEC(elf_info_t *elf, uint64_t page_size)
 {
 	mapping_range_t	range;
 
@@ -320,7 +320,7 @@ int	map_ET_EXEC(elf_info_t *elf, uint64_t page_size)
 	return (map_segments(elf, page_size));
 }
 
-int	map_ET_DYN(elf_info_t *elf, uint64_t page_size)
+static int	map_ET_DYN(elf_info_t *elf, uint64_t page_size)
 {
 	mapping_range_t	range;
 
@@ -357,7 +357,7 @@ int	map_ET_DYN(elf_info_t *elf, uint64_t page_size)
 }
 
 /* No encryption for now */
-Elf64_Ehdr	*decrypt_blob(b_header_t *b_header)
+static Elf64_Ehdr	*decrypt_blob(b_header_t *b_header)
 {
 	return ((Elf64_Ehdr*)((unsigned char*)b_header + b_header->offset));
 }
@@ -365,7 +365,7 @@ Elf64_Ehdr	*decrypt_blob(b_header_t *b_header)
 /* The stub assumes that the original elf is encrypted/compressed
 in the last PT_LOAD. At its first offset, there it must found the
 blob header containing its metadata */
-b_header_t	*find_elf_blob_header(const elf_info_t *this)
+static b_header_t	*find_elf_blob_header(const elf_info_t *this)
 {
 	b_header_t *blob;
 	Elf64_Half	phnum;
@@ -382,8 +382,8 @@ b_header_t	*find_elf_blob_header(const elf_info_t *this)
 
 	if (blob->magic[0] != 'W' ||
 		blob->magic[1] != 'O' ||
-		blob->magic[3] != 'D' ||
 		blob->magic[2] != 'O' ||
+		blob->magic[3] != 'D' ||
 		blob->magic[4] != 'Y' ||
 		blob->magic[5] != '\0')
 		return (NULL);
@@ -391,7 +391,7 @@ b_header_t	*find_elf_blob_header(const elf_info_t *this)
 	return (blob);
 }
 
-int	find_interpreter(char *interp_name, elf_info_t *elf)
+static int	find_interpreter(char *interp_name, elf_info_t *elf)
 {
 	char		*interp;
 	Elf64_Xword	interp_sz;
@@ -406,7 +406,7 @@ int	find_interpreter(char *interp_name, elf_info_t *elf)
 			if (interp_sz < 2 || interp_sz > PATH_MAX ||
 				interp[interp_sz - 1] != '\0')
 				return (-1);
-			ft_memcpy(interp_name, interp, interp_sz);
+			memcpy(interp_name, interp, interp_sz);
 			break;
 		}
 	}
@@ -415,7 +415,7 @@ int	find_interpreter(char *interp_name, elf_info_t *elf)
 
 /* Accordingly to the Linux kernel behaviour, the stub ignores any
 PT_INTERP in the interpreter binary */
-int	load_interpreter(elf_info_t *interp, char *interp_name, uint64_t page_size)
+static int	load_interpreter(elf_info_t *interp, char *interp_name, uint64_t page_size)
 {
 	int			interp_fd;
 	struct stat	st;
@@ -465,7 +465,7 @@ close_fd:
 representation in memory.
 elf_load_addr represents the pointer to the ORIGINAL elf's final load address
 interp_load_addr represents the pointer to the interpreter's load address */
-int	fix_auxv(Elf64_auxv_t *auxv, const elf_info_t *elf, const elf_info_t *interp)
+static int	fix_auxv(Elf64_auxv_t *auxv, const elf_info_t *elf, const elf_info_t *interp)
 {
 	Elf64_auxv_t	*field;
 
@@ -497,7 +497,7 @@ int	fix_auxv(Elf64_auxv_t *auxv, const elf_info_t *elf, const elf_info_t *interp
 	return (0);
 }
 
-Elf64_auxv_t	*find_auxv_start(uintptr_t *stack)
+static Elf64_auxv_t	*find_auxv_start(uintptr_t *stack)
 {
 	/* Skip argc */
 	stack++;
@@ -515,7 +515,7 @@ Elf64_auxv_t	*find_auxv_start(uintptr_t *stack)
 	return ((Elf64_auxv_t*)stack);
 }
 
-error_code_t	init_this_elf_struct(elf_info_t *this, Elf64_auxv_t *auxv)
+static error_code_t	init_this_elf_struct(elf_info_t *this, Elf64_auxv_t *auxv)
 {
 	Elf64_auxv_t *auxv_field;
 
@@ -602,7 +602,7 @@ _Noreturn void	execute_packed_elf(uintptr_t *stack)
 		sys_exit(EXIT_FAILURE);
 	}
 
-	ft_memset(interp_name, 0, PATH_MAX);
+	memset(interp_name, 0, PATH_MAX);
 	if (find_interpreter(interp_name, &elf) < 0) {
 		print_error(bad_interp);
 		sys_exit(EXIT_FAILURE);

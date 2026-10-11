@@ -10,5 +10,3 @@ sys_write:
 	ret
 
 .size sys_write, .-sys_write
-
-.section .note.GNU-stack, "", @progbits

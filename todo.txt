@@ -81,6 +81,7 @@ packer :
 
 packer assumes :
 -Interpreter must be a valid ELF64 ET_DYN for x86-64, little-endian, with p_align <= runtime page_size for every PT_LOAD.
+-Stub entry point must be addr 0x0 of .stub.text section inside compiled stub ELF file, and generated code must be correct, independent and functionnal.
 
 packer checks :
 -Elf must be x86_64
@@ -96,24 +97,17 @@ packer checks :
 -If p_align > 1, p_vaddr % p_align must equal p_offset % p_align.
 -For ET_DYN, each PT_LOAD must have p_align <= runtime page_size.
 -If INTERP present, PT_INTERP filesz must be > 1
+-Compiled stub must have .stub.text and .stub.rodata sections
 
 -------------------MEMORY-------------------
-ET_EXEC:
-    PT_LOAD reservation
-    PT_LOAD header + PHDR		PF_R
-    PT_LOAD stub code			PF_R | PF_X
-    PT_LOAD stub data			PF_R | PF_W	   <--+
-	PT_LOAD blob				PF_R | PF_W		  |
-												  |
-ET_DYN:											  |
-    PT_LOAD header + PHDR		PF_R			  |
-    PT_LOAD code du stub		PF_R | PF_X		  |
-    PT_LOAD stub data			PF_R | PF_W	   <--+
+    PT_LOAD header + PHDR		PF_R		<-----+
+    PT_LOAD stub code			PF_R | PF_X		  |
+    PT_LOAD stub data			PF_R | PF_W	   	  |
 	PT_LOAD blob				PF_R | PF_W	  	  |
 												  |
 -------------------FILE--------------------		  |
 offset 0										  |
-[ELF header]									  |
+[ELF header]	   -------------------------------+
 [Program headers]  -------------------------------+
 ---padding---
 [stub code]
@@ -145,8 +139,16 @@ stub :
 
 
 PROBLEMS :
--if 2 PT_LOADS are too far one from the other, the allocation of load_zone is too big --> wontfix
+-if 2 PT_LOADS are too far one from the other, the allocation of load_zone is too big
 
 FIX :
 -ET_EXEC le pakcer va mettre le stub dans une adresse qui ne coincide pas avec une des PT_LOADS de l'elf. On oublie aussi le PT_LOAD de reservation, et le stub va juste pouvoir map en NO_REPLACE.
 -ET_DYN on mappe effectivement toute la zone pour s'assurer que tout rentre, on garde l'adresse retournee comme base, puis on free direct. On map chaque PT_LOAD avec comme base l'adresse gardée.
+
+KNOWN LIMITATIONS:
+-stub machine code generation and extraction laks verfication (no cheks to ensure the code is independent, correct etc...)
+-ET_EXEC elf interpreters are not supported
+-page allignement > page_size is not supported
+-ET_EXEC original elf collision with stub is supported, but in a poor way (by user specifing manually the address of the stub)
+-encryption quality is not the scope of the project
+-some original elf edge cases are probably not handled

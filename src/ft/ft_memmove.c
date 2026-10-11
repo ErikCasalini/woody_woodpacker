@@ -1,6 +1,7 @@
 #include <stddef.h>
+#include "libft.h"
 
-void	*ft_memmove(void *dest, const void *src, size_t n)
+void	*memmove(void *dest, const void *src, size_t n)
 {
 	if (dest > src)
 	{
@@ -11,5 +12,5 @@ void	*ft_memmove(void *dest, const void *src, size_t n)
 		}
 		return (dest);
 	}
-	return (ft_memcpy(dest, src, n));
+	return (memcpy(dest, src, n));
 }

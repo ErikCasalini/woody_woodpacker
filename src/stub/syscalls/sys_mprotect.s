@@ -10,5 +10,3 @@ sys_mprotect:
 	ret
 
 .size sys_mprotect, .-sys_mprotect
-
-.section .note.GNU-stack, "", @progbits

@@ -11,5 +11,3 @@ sys_mmap:
 	ret
 
 .size sys_mmap, .-sys_mmap
-
-.section .note.GNU-stack, "", @progbits

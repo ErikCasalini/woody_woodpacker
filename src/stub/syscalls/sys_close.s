@@ -10,5 +10,3 @@ sys_close:
 	ret
 
 .size sys_close, .-sys_close
-
-.section .note.GNU-stack, "", @progbits

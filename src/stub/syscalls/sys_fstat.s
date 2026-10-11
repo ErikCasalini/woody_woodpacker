@@ -10,5 +10,3 @@ sys_fstat:
 	ret
 
 .size sys_fstat, .-sys_fstat
-
-.section .note.GNU-stack, "", @progbits
