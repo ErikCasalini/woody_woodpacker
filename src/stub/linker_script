@@ -4,6 +4,13 @@ SECTIONS
   {
 	*(.text.stub_entry)
 	*(.text)
+
+/* This generates padding inside the .stub.text section
+ to ensure .stub.rodata starts at an aligned virtual address.
+ This way, no in-memory padding is needed between the two
+ sections, allowing us to copy them contiguously into the
+ packed ELF while conserving their relative layout */
+	. = ALIGN(ALIGNOF(.stub.rodata));
   }
   .stub.rodata :
   {

@@ -146,7 +146,7 @@ FIX :
 -ET_DYN on mappe effectivement toute la zone pour s'assurer que tout rentre, on garde l'adresse retournee comme base, puis on free direct. On map chaque PT_LOAD avec comme base l'adresse gardée.
 
 KNOWN LIMITATIONS:
--stub machine code generation and extraction laks verfication (no cheks to ensure the code is independent, correct etc...)
+-stub machine code generation and extraction laks verfication (no cheks to ensure the code is independent, correct, assumes that the stub contains two sections ".stub.text" and "stub.rodata")
 -ET_EXEC elf interpreters are not supported
 -page allignement > page_size is not supported
 -ET_EXEC original elf collision with stub is supported, but in a poor way (by user specifing manually the address of the stub)

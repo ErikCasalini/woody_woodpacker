@@ -13,7 +13,6 @@
 #define STDERR 2
 #define EXIT_FAILURE 1
 #define ERR_LEN 128
-#define B_MAGIC 8
 #define PATH_MAX 4096
 
 typedef enum error_code_e
@@ -30,7 +29,7 @@ typedef enum error_code_e
 
 typedef struct b_header_s
 {
-	unsigned char	magic[B_MAGIC];
+	unsigned char	magic[8];
 	Elf64_Xword		compressed_size;
 	Elf64_Xword		decompressed_size;
 	Elf64_Off		offset;				/* From the beginning of this segment */
@@ -46,10 +45,10 @@ typedef struct mapping_range_s
 typedef struct elf_info_s
 {
 	Elf64_Ehdr	*file_header;	/* File representation of a valid elf, starting at its header */
-	Elf64_Ehdr	*mem_header;	/* Address of the beginning of the elf header inside a loaded segment (if any) */
-	uint64_t	file_data_sz;	/* Full size of the elf file representation */
-	Elf64_Phdr	*file_phdr;		/* Address of the beginning of the phdr inside the elf file representation */
-	Elf64_Phdr	*mem_phdr;		/* Address of the beginning of the phdr inside a loaded segment (if any) */
+	Elf64_Ehdr	*mem_header;	/* Address of the beginning of elf header inside a loaded segment (if any) */
+	uint64_t	file_data_sz;	/* Full size of elf file representation */
+	Elf64_Phdr	*file_phdr;		/* Address of the beginning of phdr inside elf file representation */
+	Elf64_Phdr	*mem_phdr;		/* Address of the beginning of phdr inside a loaded segment (if any) */
 	void		*aslr_addr;		/* Random address for ET_DYN loading. For ET_EXEC this is NULL */
 	uint64_t	load_bias;		/* Offset added to ELF virtual addresses to obtain runtime addresses */
 } elf_info_t;
@@ -320,37 +319,76 @@ static int	map_ET_EXEC(elf_info_t *elf, uint64_t page_size)
 	return (map_segments(elf, page_size));
 }
 
+static Elf64_Xword	determine_global_alignement(Elf64_Phdr *phdr, Elf64_Half phnum, uint64_t page_size)
+{
+	Elf64_Xword	alignment;
+
+	alignment = page_size;
+
+	for (Elf64_Half i = 0; i < phnum; i++) {
+		if (phdr[i].p_type != PT_LOAD)
+			continue;
+		if (phdr[i].p_align > alignment)
+			alignment = phdr[i].p_align;
+	}
+
+	return (alignment);
+}
+
 static int	map_ET_DYN(elf_info_t *elf, uint64_t page_size)
 {
 	mapping_range_t	range;
+	Elf64_Xword		alignment;
+	void			*raw_addr;
 
 	if (!elf || !elf->file_header || !elf->file_phdr)
 		return (-1);
 
+	/* ABI states that for each PT_LOAD with p_align > 1,
+	p_vaddr mod p_align == p_offset mod p_align. Packer
+	checks that this is true for original ELF. However,
+	the load_bias for our ET_DYN must preserve this property.
+	Thus we need a load_bias for which this is true :
+	(load_biad + p_vaddr) mod p_align == p_offset mod p_align
+	for each PT_LOAD */
+	alignment = determine_global_alignement(
+					elf->file_phdr,
+					elf->file_header->e_phnum,
+					page_size
+				);
+
 	/* We preallocate the required size at a random address,
 	to ensure we have enought space to load all the PT_LOADS.
-	Note that an ORIGINAL elf without any PT_LOADs must be
+	Note that an ORIGINAL elf with no PT_LOADs must be
 	refused by the packer */
 	range = get_mapping_range(elf->file_phdr, elf->file_header->e_phnum, page_size);
-	elf->aslr_addr = sys_mmap(
-							NULL,
-							range.end - range.start,
-							PROT_NONE,
-							MAP_PRIVATE | MAP_ANONYMOUS,
-							-1,
-							0
-	);
-	if ((intptr_t)elf->aslr_addr < 0)
+
+	/* mmap returns an address aligned to page_size. To satisfy p_align as well,
+	we reserve an extra "alignment" bytes. This lets us round up to the next
+	multiple of "alignment" while keeping enough room for all segments
+	(the rounding adjustment never exceeds "alignment"). */
+	raw_addr = sys_mmap(
+					NULL,
+					range.end - range.start + alignment,
+					PROT_NONE,
+					MAP_PRIVATE | MAP_ANONYMOUS,
+					-1,
+					0
+				);
+	if ((intptr_t)raw_addr < 0)
 		return (-1);
 
-	/* If we want the first PT_LOAD to be paged exactly
-	at the beginning of the reserved area, we must substract
-	the range.start value to the load bias for any
-	subsequent operation */
-	elf->load_bias = (uint64_t)elf->aslr_addr - range.start;
+	/* Now that we have the raw address (aligned to page_size), we can round up
+	to the next multiple of "alignment". However, range.start (the starting
+	virtual address of the region occupied by the segments, rounded down to
+	a page boundary) will then be added to this result to obtain the base
+	address of our ET_DYN. We must therefore subtract range.start before
+	rounding up to ensure that there is enough room for all segments. */
+	elf->load_bias = round_to_page_up((uintptr_t)raw_addr - range.start, alignment);
+	elf->aslr_addr = (void*)(elf->load_bias + range.start);
 
 	/* We can free the checking reservation */
-	if (sys_munmap(elf->aslr_addr, range.end - range.start) < 0)
+	if (sys_munmap(raw_addr, range.end - range.start + alignment) < 0)
 		return (-1);
 
 	return (map_segments(elf, page_size));
@@ -602,7 +640,6 @@ _Noreturn void	execute_packed_elf(uintptr_t *stack)
 		sys_exit(EXIT_FAILURE);
 	}
 
-	memset(interp_name, 0, PATH_MAX);
 	if (find_interpreter(interp_name, &elf) < 0) {
 		print_error(bad_interp);
 		sys_exit(EXIT_FAILURE);
