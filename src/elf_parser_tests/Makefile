@@ -15,7 +15,7 @@ SRC := main.c \
 	   segment_mapper.c \
 	   pt_dynamic.c \
 	   stack_fix.c \
-	   jump_to_interp.s`
+	   jump_to_with_stack.s
 
 OBJ := $(addprefix $(OBJ_DIR)/, $(SRC:.c=.o))
 OBJ := $(OBJ:.s=.o)

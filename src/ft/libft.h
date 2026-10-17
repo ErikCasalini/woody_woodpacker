@@ -1,7 +1,7 @@
 #ifndef LIBFT_H
 # define LIBFT_H
 
-# include "../custom_types.h"
+#include <stddef.h>
 
 /* We need the exact names for memcpy, memmove and memset
 because of Clang may generate calls to them */

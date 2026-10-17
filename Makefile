@@ -4,7 +4,8 @@ LD := ld
 STUB_OBJ_DIR := stub_bin
 STUB := $(STUB_OBJ_DIR)/stub.elf
 STUB_CFLAGS := -Wall -Werror -Wextra -ffreestanding -fno-stack-protector -nostdlib -fPIE -MMD
-STUB_ASFLAGS := -Xassembler --fatal-warnings													# -Xassembler tels Clang to send the following option to the assembler tool
+# -Xassembler tels Clang to send the following option to the assembler tool
+STUB_ASFLAGS := -Xassembler --fatal-warnings
 STUB_LDFLAGS := -static --no-dynamic-linker -T src/stub/linker_script
 
 PACKER_OBJ_DIR := packer_bin
@@ -13,7 +14,6 @@ PACKER_CFLAGS := -Wall -Werror -Wextra -g
 # PACKER_ASFLAGS := -Wa,--fatal-warnings
 # PACKER_LDFLAGS := -Wl,-Ttext-segment=0x10000
 
-# Les sources communes sont compilees separement pour chaque binaire.
 COMMON_SRC := src/ft/ft_memcpy.c \
 			  src/ft/ft_memmove.c \
 			  src/ft/ft_memset.c \
@@ -88,16 +88,14 @@ $(PACKER_OBJ_DIR)/%.o: src/%.c
 -include $(PACKER_DEPS)
 
 clean:
-	rm -f $(STUB_OBJ) $(STUB_DEPS)
-	rm -f $(PACKER_OBJ) $(PACKER_DEPS)
-
-fclean: clean
 	rm -rf $(STUB_OBJ_DIR)
 	rm -rf $(PACKER_OBJ_DIR)
+
+fclean: clean
+	rm -f $(PACKER)
 
 re:
 	$(MAKE) fclean
 	$(MAKE) all
 
-# .PHONY: packer
-.PHONY: all stub clean fclean re
+.PHONY: all packer stub clean fclean re

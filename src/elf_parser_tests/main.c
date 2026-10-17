@@ -293,7 +293,7 @@ int	main(int argc, char *argv[])
 	else {
 		entry = elf.header.entry + base_addr;
 	}
-	jump_to_with_stack(entry, (size_t)(argv - 1));
+	jump_to_with_stack((void*)entry, (void*)(argv - 1));
 
 	close(file);
 	printf("\nDONE\n");

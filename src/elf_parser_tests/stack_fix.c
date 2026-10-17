@@ -11,7 +11,7 @@ AT_PHDR
 AT_PHNUM
 AT_BASE
 AT_ENTRY
-AT_EXECFN --> on s'en bat la race
+AT_EXECFN ?
 */
 
 static int	set_auxv(t_auxv *auxv_array, t_auxv auxv)
