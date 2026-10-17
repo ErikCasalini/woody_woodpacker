@@ -36,8 +36,7 @@ typedef struct elf_layout_s
 {
 	Elf64_Ehdr	header;
 	Elf64_Phdr	phdrs_segment;
-	Elf64_Phdr	stub_text_segment;
-	Elf64_Phdr	stub_rodata_segment;
+	Elf64_Phdr	stub_segment;
 	Elf64_Phdr	payload_segment;
 } elf_layout_t;
 
@@ -284,7 +283,7 @@ void	init_header(Elf64_Ehdr *target_header, Elf64_Ehdr *header)
 	header->e_ehsize = sizeof(Elf64_Ehdr);
 	header->e_phentsize = sizeof(Elf64_Phdr);
 	header->e_phoff = header->e_ehsize;
-	header->e_phnum = 5;
+	header->e_phnum = 4;
 	header->e_shentsize = 0;
 	header->e_shnum = 0;
 	header->e_shstrndx = 0;
@@ -403,36 +402,23 @@ void	init_phdrs_segment(Elf64_Phdr *phdrs_segment, Elf64_Off file_off, intptr_t 
 	phdrs_segment->p_offset = file_off;
 	phdrs_segment->p_vaddr = vaddr;
 	phdrs_segment->p_paddr = vaddr;
-	/* We know that packed ELF will contain exactly 5 PT_LOADS */
-	phdrs_segment->p_filesz = sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr) * 5;
-	phdrs_segment->p_memsz = sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr) * 5;
+	/* We know that packed ELF will contain exactly 4 PT_LOADS */
+	phdrs_segment->p_filesz = sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr) * 4;
+	phdrs_segment->p_memsz = sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr) * 4;
 	phdrs_segment->p_align = 0x1000;
 }
 
-void	init_stub_text_segment(Elf64_Phdr *stub_text_segment, Elf64_Shdr *packer_stub_text_section, Elf64_Off file_offset, intptr_t vaddr)
+void	init_stub_segment(Elf64_Phdr *stub_segment, Elf64_Shdr *packer_stub_section, Elf64_Off file_offset, intptr_t vaddr)
 {
-	stub_text_segment->p_type = PT_LOAD;
-	stub_text_segment->p_flags = PF_R | PF_X;
-	stub_text_segment->p_offset = file_offset;
-	stub_text_segment->p_vaddr = vaddr;
-	stub_text_segment->p_paddr = vaddr;
-	stub_text_segment->p_filesz = packer_stub_text_section->sh_size;
-	stub_text_segment->p_memsz = packer_stub_text_section->sh_size;
-	stub_text_segment->p_align = 0x1000;
+	stub_segment->p_type = PT_LOAD;
+	stub_segment->p_flags = PF_R | PF_X;
+	stub_segment->p_offset = file_offset;
+	stub_segment->p_vaddr = vaddr;
+	stub_segment->p_paddr = vaddr;
+	stub_segment->p_filesz = packer_stub_section->sh_size;
+	stub_segment->p_memsz = packer_stub_section->sh_size;
+	stub_segment->p_align = 0x1000;
 }
-
-void	init_stub_rodata_segment(Elf64_Phdr *stub_rodata_segment, Elf64_Shdr *packer_stub_rodata_section, Elf64_Off file_offset, intptr_t vaddr)
-{
-	stub_rodata_segment->p_type = PT_LOAD;
-	stub_rodata_segment->p_flags = PF_R;
-	stub_rodata_segment->p_offset = file_offset;
-	stub_rodata_segment->p_vaddr = vaddr;
-	stub_rodata_segment->p_paddr = vaddr;
-	stub_rodata_segment->p_filesz = packer_stub_rodata_section->sh_size;
-	stub_rodata_segment->p_memsz = packer_stub_rodata_section->sh_size;
-	stub_rodata_segment->p_align = 0x1000;
-}
-
 
 void	init_payload_segment(Elf64_Phdr *payload_segment, size_t payload_size, Elf64_Off file_offset, intptr_t vaddr)
 {
@@ -450,12 +436,11 @@ void	init_payload_segment(Elf64_Phdr *payload_segment, size_t payload_size, Elf6
 on a virtual memory address. This inply that no extra memory
 padding will be needed, and the in-memory layout of those sections
 will be the same as their in-file layout */
-error_t	init_output_headers(elf_layout_t *output, Elf64_Ehdr *target_file_data, size_t target_file_size, Elf64_Shdr *packer_stub_text_section, Elf64_Shdr *packer_stub_rodata_section)
+error_t	init_output_headers(elf_layout_t *output, Elf64_Ehdr *target_file_data, size_t target_file_size, Elf64_Shdr *packer_stub_section)
 {
 	off_t			file_off;
 	size_t			prev_mem_end;
 	intptr_t		vaddr;
-	// intptr_t		entry;
 	intptr_t		base_addr;
 	int64_t			alignment;
 	size_t			output_memsz;
@@ -473,15 +458,10 @@ error_t	init_output_headers(elf_layout_t *output, Elf64_Ehdr *target_file_data, 
 	prev_mem_end = output->phdrs_segment.p_vaddr + output->phdrs_segment.p_memsz;
 	file_off = output->phdrs_segment.p_offset + output->phdrs_segment.p_filesz;
 	vaddr = round_to_page_up(prev_mem_end, alignment) + (file_off % alignment);
-	init_stub_text_segment(&output->stub_text_segment, packer_stub_text_section, file_off, vaddr);
+	init_stub_segment(&output->stub_segment, packer_stub_section, file_off, vaddr);
 
-	prev_mem_end = output->stub_text_segment.p_vaddr + output->stub_text_segment.p_memsz;
-	file_off = output->stub_text_segment.p_offset + output->stub_text_segment.p_filesz;
-	vaddr = round_to_page_up(prev_mem_end, alignment) + (file_off % alignment);
-	init_stub_rodata_segment(&output->stub_rodata_segment, packer_stub_rodata_section, file_off, vaddr);
-
-	prev_mem_end = output->stub_rodata_segment.p_vaddr + output->stub_rodata_segment.p_memsz;
-	file_off = output->stub_rodata_segment.p_offset + output->stub_rodata_segment.p_filesz;
+	prev_mem_end = output->stub_segment.p_vaddr + output->stub_segment.p_memsz;
+	file_off = output->stub_segment.p_offset + output->stub_segment.p_filesz;
 	vaddr = round_to_page_up(prev_mem_end, alignment) + (file_off % alignment);
 	init_payload_segment(&output->payload_segment, target_file_size, file_off, vaddr);
 
@@ -500,13 +480,16 @@ error_t	init_output_headers(elf_layout_t *output, Elf64_Ehdr *target_file_data, 
 		return (et_exec_collide);
 
 	output->phdrs_segment.p_vaddr += base_addr;
-	output->stub_text_segment.p_vaddr += base_addr;
-	output->stub_rodata_segment.p_vaddr += base_addr;
+	output->stub_segment.p_vaddr += base_addr;
 	output->payload_segment.p_vaddr += base_addr;
 
+	output->phdrs_segment.p_paddr += base_addr;
+	output->stub_segment.p_paddr += base_addr;
+	output->payload_segment.p_paddr += base_addr;
+
 	/* We assume that entry code is at the very beginning
-	of .stub.text section */
-	output->header.e_entry = output->stub_text_segment.p_vaddr;
+	of .stub section */
+	output->header.e_entry = output->stub_segment.p_vaddr;
 
 
 	// Y A UN DECALAGE DE UNE PAGE ENTRE .STUB.TEXT et .STUB.RODATA
@@ -552,8 +535,7 @@ void	print_output_layout(const elf_layout_t *output)
 	printf("  e_shnum:     %u\n", (unsigned int)header->e_shnum);
 	printf("  e_shstrndx:  %u\n", (unsigned int)header->e_shstrndx);
 	print_output_segment("phdrs_segment (PT_LOAD)", &output->phdrs_segment);
-	print_output_segment("stub_text_segment (PT_LOAD)", &output->stub_text_segment);
-	print_output_segment("stub_rodata_segment (PT_LOAD)", &output->stub_rodata_segment);
+	print_output_segment("stub_segment (PT_LOAD)", &output->stub_segment);
 	print_output_segment("payload_segment (PT_LOAD)", &output->payload_segment);
 }
 
@@ -575,8 +557,7 @@ int main(int argc, char *argv[])
 	struct stat		target_st;
 	struct stat		packer_st;
 	elf_layout_t	output_layout = {0};
-	Elf64_Shdr		*packer_stub_text_section;
-	Elf64_Shdr		*packer_stub_rodata_section;
+	Elf64_Shdr		*packer_stub_section;
 	error_t			error;
 
 	if (argc < 2)
@@ -612,20 +593,15 @@ int main(int argc, char *argv[])
 	if (packer_file_data == NULL)
 		return (printf("Error: mmap() %s\n", strerror(errno)), 1);
 
-	packer_stub_text_section = find_section(packer_file_data, ".stub.text");
-	if (packer_stub_text_section == NULL)
+	packer_stub_section = find_section(packer_file_data, ".stub");
+	if (packer_stub_section == NULL)
 		return (printf("Error: .stub.text section not found\n"), 1);
-
-	packer_stub_rodata_section = find_section(packer_file_data, ".stub.rodata");
-	if (packer_stub_text_section == NULL)
-		return (printf("Error: .stub.rodata section not found\n"), 1);
 
 	error = init_output_headers(
 				&output_layout,
 				target_file_data,
 				target_st.st_size,
-				packer_stub_text_section,
-				packer_stub_rodata_section
+				packer_stub_section
 			);
 	if (error != ok) {
 		print_error(error);

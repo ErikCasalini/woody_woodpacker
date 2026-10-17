@@ -101,8 +101,7 @@ packer checks :
 
 -------------------MEMORY-------------------
     PT_LOAD header + PHDR		PF_R		<-----+
-    PT_LOAD stub code			PF_R | PF_X		  |
-    PT_LOAD stub data			PF_R | PF_W	   	  |
+    PT_LOAD stub code + rodata	PF_R | PF_X		  |
 	PT_LOAD blob				PF_R | PF_W	  	  |
 												  |
 -------------------FILE--------------------		  |
@@ -110,9 +109,7 @@ offset 0										  |
 [ELF header]	   -------------------------------+
 [Program headers]  -------------------------------+
 ---padding---
-[stub code]
----padding---
-[stub data]
+[stub code + rodata]
 ---padding---
 [blob header]
 [encrypted blob]
@@ -139,16 +136,17 @@ stub :
 
 
 PROBLEMS :
--if 2 PT_LOADS are too far one from the other, the allocation of load_zone is too big
+-if 2 PT_LOADS are too far one from the other, the allocation of load_zone is too big --> FIXED
 
 FIX :
 -ET_EXEC le pakcer va mettre le stub dans une adresse qui ne coincide pas avec une des PT_LOADS de l'elf. On oublie aussi le PT_LOAD de reservation, et le stub va juste pouvoir map en NO_REPLACE.
 -ET_DYN on mappe effectivement toute la zone pour s'assurer que tout rentre, on garde l'adresse retournee comme base, puis on free direct. On map chaque PT_LOAD avec comme base l'adresse gardée.
 
 KNOWN LIMITATIONS:
--stub machine code generation and extraction laks verfication (no cheks to ensure the code is independent, correct, assumes that the stub contains two sections ".stub.text" and "stub.rodata")
+-stub machine code generation and extraction laks verfication :
+	-no cheks to ensure the code is independent and correct
+	-we assumes that the stub linking generates only .text and .rodata (no .data)
+-stub .text and .rodata sections are merged inside a single .stub section with both P_R and P_X
 -ET_EXEC elf interpreters are not supported
--page allignement > page_size is not supported
--ET_EXEC original elf collision with stub is supported, but in a poor way (by user specifing manually the address of the stub)
 -encryption quality is not the scope of the project
 -some original elf edge cases are probably not handled

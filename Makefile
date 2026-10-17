@@ -1,12 +1,14 @@
 CC := clang
 LD := ld
 
+LINKER_SCRIPT := src/stub/linker_script
+
 STUB_OBJ_DIR := stub_bin
 STUB := $(STUB_OBJ_DIR)/stub.elf
 STUB_CFLAGS := -Wall -Werror -Wextra -ffreestanding -fno-stack-protector -nostdlib -fPIE -MMD
 # -Xassembler tels Clang to send the following option to the assembler tool
 STUB_ASFLAGS := -Xassembler --fatal-warnings
-STUB_LDFLAGS := -static --no-dynamic-linker -T src/stub/linker_script
+STUB_LDFLAGS := -static --no-dynamic-linker -T $(LINKER_SCRIPT)
 
 PACKER_OBJ_DIR := packer_bin
 PACKER := packer
@@ -48,24 +50,20 @@ PACKER_OBJ := $(PACKER_OBJ:.c=.o)
 # PACKER_OBJ := $(PACKER_OBJ:.s=.o)
 PACKER_DEPS := $(PACKER_OBJ:.o=.d)
 
-all: $(STUB)
 all: $(PACKER)
 
 stub: $(STUB)
-packer: $(PACKER)
 
-$(STUB): $(STUB_OBJ)
+$(STUB): $(STUB_OBJ) $(LINKER_SCRIPT)
 	$(LD) $(STUB_OBJ) $(STUB_LDFLAGS) -o $@
 
 $(PACKER): $(PACKER_OBJ) $(STUB)
 	$(CC) $(PACKER_OBJ) -o $@
-	objcopy --dump-section .stub.text=stub.text.bin \
-    		--dump-section .stub.rodata=stub.rodata.bin \
+	objcopy --dump-section .stub=stub.bin \
     		$(STUB)
-	objcopy --add-section .stub.text=stub.text.bin \
-			--add-section .stub.rodata=stub.rodata.bin \
+	objcopy --add-section .stub=stub.bin \
 			$@
-	@rm stub.text.bin stub.rodata.bin
+	@rm stub.bin
 
 # $(@D) -> parent directory of target
 $(STUB_OBJ_DIR)/%.o: src/%.c
@@ -98,4 +96,4 @@ re:
 	$(MAKE) fclean
 	$(MAKE) all
 
-.PHONY: all packer stub clean fclean re
+.PHONY: all stub clean fclean re
