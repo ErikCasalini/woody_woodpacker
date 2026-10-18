@@ -8,3 +8,6 @@ a.out
 *.d
 *.o
 bin/
+woody
+woody.packed
+woody_woodpacker

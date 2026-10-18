@@ -38,6 +38,7 @@ typedef struct elf_layout_s
 	Elf64_Phdr	phdrs_segment;
 	Elf64_Phdr	stub_segment;
 	Elf64_Phdr	payload_segment;
+	Elf64_Phdr	gnu_stack_segment;
 } elf_layout_t;
 
 typedef enum error_e
@@ -63,6 +64,7 @@ typedef enum error_e
 	bad_interp_name,
 	bad_page_sz,
 	et_exec_collide,
+	unexpected_error
 } error_t;
 
 void	print_error(error_t error)
@@ -149,6 +151,9 @@ error_t	check_file_metadata(struct stat target_st)
 
 error_t check_header(Elf64_Ehdr *target_header, size_t target_file_size)
 {
+	if (!target_header)
+		return (unexpected_error);
+
 	if (target_file_size < sizeof(Elf64_Ehdr))
 		return (too_short);
 
@@ -190,6 +195,9 @@ error_t check_header(Elf64_Ehdr *target_header, size_t target_file_size)
 int	check_interp_name(Elf64_Ehdr *target_header, Elf64_Phdr *pt_interp)
 {
 	char *interp_name;
+
+	if (!target_header || !pt_interp)
+		return (-1);
 
 	if (pt_interp->p_filesz <= 1)
 		return (1);
@@ -257,6 +265,9 @@ error_t	check_elf_validity(Elf64_Ehdr *target_header, struct stat target_st)
 {
 	error_t	error;
 
+	if (!target_header)
+		return (unexpected_error);
+
 	error = check_file_metadata(target_st);
 	if (error)
 		return (error);
@@ -272,8 +283,11 @@ error_t	check_elf_validity(Elf64_Ehdr *target_header, struct stat target_st)
 	return (ok);
 }
 
-void	init_header(Elf64_Ehdr *target_header, Elf64_Ehdr *header)
+void	init_header(Elf64_Ehdr *header, Elf64_Ehdr *target_header)
 {
+	if (!header || !target_header)
+		return;
+
 	ft_memcpy(header->e_ident, target_header->e_ident, sizeof(header->e_ident));
 
 	header->e_type = target_header->e_type;
@@ -311,6 +325,9 @@ mapping_range_t	get_mapping_range(Elf64_Phdr *phdr, Elf64_Half phnum, uint64_t p
 	uintptr_t	segment_end;
 	Elf64_Half	i = 0;
 
+	if (!phdr)
+		return (range);
+
 	while (i < phnum) {
 		if (phdr[i].p_type == PT_LOAD) {
 			range.start = round_to_page_down(phdr[i].p_vaddr, page_size);
@@ -345,7 +362,7 @@ intptr_t	select_output_base_addr(Elf64_Ehdr *target_file_data, size_t output_mem
 	Elf64_Phdr		*target_phdrs;
 	mapping_range_t	target_load_range;
 
-	if (target_file_data->e_type == ET_DYN)
+	if (!target_file_data || target_file_data->e_type == ET_DYN)
 		return (0x0);
 
 	/* If original ELF is ET_EXEC, we must chose absolute addresses
@@ -373,6 +390,9 @@ Elf64_Shdr	*find_section(Elf64_Ehdr *packer_header, char *name)
 	Elf64_Shdr	*shdr_table;
 	char		*section_names;
 	Elf64_Shdr	*section_header = NULL;
+
+	if (!packer_header || !name)
+		return (NULL);
 
 	shdr_table = (Elf64_Shdr*)((unsigned char*)packer_header + packer_header->e_shoff);
 	if (!shdr_table ||
@@ -402,7 +422,7 @@ void	init_phdrs_segment(Elf64_Phdr *phdrs_segment, Elf64_Off file_off, intptr_t 
 	phdrs_segment->p_offset = file_off;
 	phdrs_segment->p_vaddr = vaddr;
 	phdrs_segment->p_paddr = vaddr;
-	/* We know that packed ELF will contain exactly 4 PT_LOADS */
+	/* We know that packed ELF will contain exactly 4 segments */
 	phdrs_segment->p_filesz = sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr) * 4;
 	phdrs_segment->p_memsz = sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr) * 4;
 	phdrs_segment->p_align = 0x1000;
@@ -410,6 +430,9 @@ void	init_phdrs_segment(Elf64_Phdr *phdrs_segment, Elf64_Off file_off, intptr_t 
 
 void	init_stub_segment(Elf64_Phdr *stub_segment, Elf64_Shdr *packer_stub_section, Elf64_Off file_offset, intptr_t vaddr)
 {
+	if (!stub_segment)
+		return;
+
 	stub_segment->p_type = PT_LOAD;
 	stub_segment->p_flags = PF_R | PF_X;
 	stub_segment->p_offset = file_offset;
@@ -422,6 +445,9 @@ void	init_stub_segment(Elf64_Phdr *stub_segment, Elf64_Shdr *packer_stub_section
 
 void	init_payload_segment(Elf64_Phdr *payload_segment, size_t payload_size, Elf64_Off file_offset, intptr_t vaddr)
 {
+	if (!payload_segment)
+		return;
+
 	payload_segment->p_type = PT_LOAD;
 	payload_segment->p_flags = PF_R | PF_W;
 	payload_segment->p_offset = file_offset;
@@ -430,6 +456,31 @@ void	init_payload_segment(Elf64_Phdr *payload_segment, size_t payload_size, Elf6
 	payload_segment->p_filesz = payload_size;
 	payload_segment->p_memsz = payload_size;
 	payload_segment->p_align = 0x1000;
+}
+
+/* We assume that ELF validity check has already been ensured */
+void	init_gnu_stack_segment(Elf64_Phdr *gnu_stack_segment, Elf64_Ehdr *target_file_data)
+{
+	Elf64_Half	target_phnum;
+	Elf64_Phdr	*target_phdr;
+
+	if (!gnu_stack_segment || !target_file_data)
+		return;
+
+	gnu_stack_segment->p_type = PT_GNU_STACK;
+	gnu_stack_segment->p_flags = PF_R | PF_W;
+	gnu_stack_segment->p_memsz = 0x0;
+
+	target_phnum = target_file_data->e_phnum;
+	target_phdr = (Elf64_Phdr*)((unsigned char*)target_file_data + target_file_data->e_phoff);
+
+	for (Elf64_Half i = 0; i < target_phnum; i++) {
+		if (target_phdr[i].p_type == PT_GNU_STACK) {
+			gnu_stack_segment->p_flags = target_phdr[i].p_flags;
+			gnu_stack_segment->p_memsz = target_phdr[i].p_memsz;
+			break;
+		}
+	}
 }
 
 /* We assume that the beginning of both sections is alligned
@@ -445,11 +496,14 @@ error_t	init_output_headers(elf_layout_t *output, Elf64_Ehdr *target_file_data, 
 	int64_t			alignment;
 	size_t			output_memsz;
 
+	if (!output || !target_file_data || !packer_stub_section)
+		return (unexpected_error);
+
 	alignment = sysconf(_SC_PAGESIZE);
 	if (alignment == -1)
 		return (bad_page_sz);
 
-	init_header(target_file_data, &output->header);
+	init_header(&output->header, target_file_data);
 
 	file_off = 0;
 	vaddr = 0;
@@ -463,15 +517,14 @@ error_t	init_output_headers(elf_layout_t *output, Elf64_Ehdr *target_file_data, 
 	prev_mem_end = output->stub_segment.p_vaddr + output->stub_segment.p_memsz;
 	file_off = output->stub_segment.p_offset + output->stub_segment.p_filesz;
 	vaddr = round_to_page_up(prev_mem_end, alignment) + (file_off % alignment);
-	init_payload_segment(&output->payload_segment, target_file_size, file_off, vaddr);
+	init_payload_segment(&output->payload_segment, sizeof(payload_header_t) + target_file_size, file_off, vaddr);
 
-	//gnu_stack_phdr
+	init_gnu_stack_segment(&output->gnu_stack_segment, target_file_data);
 
 	/* We calculate the total page space that our output ELF will require */
 	output_memsz = (size_t)round_to_page_up(
 								output->payload_segment.p_vaddr +
-								output->payload_segment.p_memsz +
-								sizeof(payload_header_t),
+								output->payload_segment.p_memsz,
 								alignment
 							);
 
@@ -491,8 +544,6 @@ error_t	init_output_headers(elf_layout_t *output, Elf64_Ehdr *target_file_data, 
 	of .stub section */
 	output->header.e_entry = output->stub_segment.p_vaddr;
 
-
-	// Y A UN DECALAGE DE UNE PAGE ENTRE .STUB.TEXT et .STUB.RODATA
 	return (ok);
 }
 
@@ -537,6 +588,33 @@ void	print_output_layout(const elf_layout_t *output)
 	print_output_segment("phdrs_segment (PT_LOAD)", &output->phdrs_segment);
 	print_output_segment("stub_segment (PT_LOAD)", &output->stub_segment);
 	print_output_segment("payload_segment (PT_LOAD)", &output->payload_segment);
+	print_output_segment("gnu_stack_segment (GNU_STACK)", &output->gnu_stack_segment);
+}
+
+error_t	fill_output_elf(int					output_fd,
+						elf_layout_t		*output,
+						Elf64_Shdr			*packer_stub_section,
+						Elf64_Ehdr			*packer_file_data,
+						Elf64_Ehdr			*target_file_data,
+						payload_header_t	*encrypt_header)
+{
+	void	*start_stub_section;
+
+	start_stub_section = (unsigned char*)packer_file_data + packer_stub_section->sh_offset;
+
+	write(output_fd, &output->header, sizeof(output->header));
+	write(output_fd, &output->phdrs_segment, sizeof(output->phdrs_segment));
+	write(output_fd, &output->stub_segment, sizeof(output->stub_segment));
+	write(output_fd, &output->payload_segment, sizeof(output->payload_segment));
+	write(output_fd, &output->gnu_stack_segment, sizeof(output->gnu_stack_segment));
+
+	write(output_fd, start_stub_section, packer_stub_section->sh_size);
+
+	write(output_fd, encrypt_header, sizeof(payload_header_t));
+
+	write(output_fd, target_file_data, encrypt_header->decompressed_size);
+
+	return (ok);
 }
 
 /*
@@ -550,15 +628,17 @@ void	print_output_layout(const elf_layout_t *output)
 */
 int main(int argc, char *argv[])
 {
-	int				target_fd;
-	int				packer_fd;
-	void			*target_file_data;
-	void			*packer_file_data;
-	struct stat		target_st;
-	struct stat		packer_st;
-	elf_layout_t	output_layout = {0};
-	Elf64_Shdr		*packer_stub_section;
-	error_t			error;
+	int					target_fd;
+	int					packer_fd;
+	int					output_fd;
+	payload_header_t	encrypt_header = {0};
+	void				*target_file_data;
+	void				*packer_file_data;
+	struct stat			target_st;
+	struct stat			packer_st;
+	elf_layout_t		output_layout = {0};
+	Elf64_Shdr			*packer_stub_section;
+	error_t				error;
 
 	if (argc < 2)
 		return (printf("Specify a filename\n"), 1);
@@ -608,16 +688,25 @@ int main(int argc, char *argv[])
 		return (1);
 	}
 
-	print_output_layout(&output_layout);
+	ft_memcpy(encrypt_header.magic, "WOODY", sizeof("WOODY"));
+	encrypt_header.compressed_size	= target_st.st_size;
+	encrypt_header.decompressed_size = target_st.st_size;
+	encrypt_header.offset = sizeof(payload_header_t);
 
+	// print_output_layout(&output_layout);
 
+	/* CREATE OUTPUT ELF */
+	output_fd = open("woody", O_CREAT | O_WRONLY | O_TRUNC, 0755);
+	if (output_fd < 0)
+		return (printf("Error: open() %s\n", strerror(errno)), 1);
 
-	// error = parse_ELF_header(file, &elf);
-	// if (error != ok) {
-	// 	close(file);
-	// 	print_error(error);
-	// 	return (1);
-	// }
+	error = fill_output_elf(output_fd, &output_layout, packer_stub_section, packer_file_data, target_file_data, &encrypt_header);
+	if (error != ok) {
+		print_error(error);
+		return (1);
+	}
 
+	printf("ELF successuflly packed!\n");
 
+	return (0);
 }

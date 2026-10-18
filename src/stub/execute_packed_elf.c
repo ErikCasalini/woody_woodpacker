@@ -12,10 +12,10 @@
 #define STDOUT 1
 #define STDERR 2
 #define EXIT_FAILURE 1
-#define ERR_LEN 128
+#define STRINGS_LEN 468
 #define PATH_MAX 4096
 
-typedef enum error_code_e
+typedef enum str_code_e
 {
 	ok,
 	bad_stack,
@@ -25,7 +25,8 @@ typedef enum error_code_e
 	corrupted,
 	bad_load,
 	bad_interp,
-} error_code_t;
+	start_msg
+} str_code_t;
 
 typedef struct b_header_s
 {
@@ -53,7 +54,15 @@ typedef struct elf_info_s
 	uint64_t	load_bias;		/* Offset added to ELF virtual addresses to obtain runtime addresses */
 } elf_info_t;
 
-static const char	error[][ERR_LEN] = {
+static const char	strings[][STRINGS_LEN] = {
+	[start_msg] = "+------------------------------------------------+\n"
+    "|  __        __   ___     ___    ____   __   __  |\n"
+    "|  \\ \\      / /  / _ \\   / _ \\  |  _ \\  \\ \\ / /  |\n"
+    "|   \\ \\ /\\ / /  | | | | | | | | | | | |  \\ V /   |\n"
+    "|    \\ V  V /   | |_| | | |_| | | |_| |   | |    |\n"
+    "|     \\_/\\_/     \\___/   \\___/  |____/    |_|    |\n"
+    "|                                                |\n"
+    "+------------------------------------------------+\n",
 	[bad_stack] = "execute_packed_elf : illformed stack\n",
 	[bad_auxv] = "find_auxv_field : invalid auxv\n",
 	[blob_not_found] = "find_elf_blob : original elf not found or currupted\n",
@@ -63,9 +72,9 @@ static const char	error[][ERR_LEN] = {
 	[bad_interp] = "load_interpreter : invalid interpreter or error during interpreter loading\n",
 };
 
-static void	print_error(error_code_t code)
+static void	print_error(str_code_t code)
 {
-	sys_write(STDERR, error[code], ft_strlen(error[code]));
+	sys_write(STDERR, strings[code], ft_strlen(strings[code]));
 }
 
 static Elf64_auxv_t	*find_auxv_field(Elf64_auxv_t *auxv, uint64_t type)
@@ -400,9 +409,9 @@ static Elf64_Ehdr	*decrypt_blob(b_header_t *b_header)
 	return ((Elf64_Ehdr*)((unsigned char*)b_header + b_header->offset));
 }
 
-/* The stub assumes that the original elf is encrypted/compressed
-in the last PT_LOAD. At its first offset, there it must found the
-blob header containing its metadata */
+/* The stub assumes that the original ELF is encrypted/compressed
+ in the last PT_LOAD. At its first offset, there must be a
+ blob header containing its metadata. */
 static b_header_t	*find_elf_blob_header(const elf_info_t *this)
 {
 	b_header_t *blob;
@@ -553,7 +562,7 @@ static Elf64_auxv_t	*find_auxv_start(uintptr_t *stack)
 	return ((Elf64_auxv_t*)stack);
 }
 
-static error_code_t	init_this_elf_struct(elf_info_t *this, Elf64_auxv_t *auxv)
+static str_code_t	init_this_elf_struct(elf_info_t *this, Elf64_auxv_t *auxv)
 {
 	Elf64_auxv_t *auxv_field;
 
@@ -590,6 +599,8 @@ _Noreturn void	execute_packed_elf(uintptr_t *stack)
 	uint64_t		page_size;						/* Will contain the page size for this execution */
 	int				retval;
 	Elf64_auxv_t	*auxv_field;
+
+	sys_write(STDOUT, strings[start_msg], sizeof(strings[start_msg]));
 
 	if (!stack) {
 		print_error(bad_stack);
@@ -663,7 +674,7 @@ _Noreturn void	execute_packed_elf(uintptr_t *stack)
 	}
 
 	sys_munmap(interp.file_header, interp.file_data_sz);
-	// sys_munmap(b_header, b_header->decompressed_size);
+	// sys_munmap(blob_header, blob_header->decompressed_size); Si on veut free il faut calculer la base de la page et sa fin
 
 	/* We jump to the loaded interepreter or directly to the decrypted elf entry */
 	jump_to_with_stack(entry, stack);
