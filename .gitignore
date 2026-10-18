@@ -1,0 +1,13 @@
+src/elf_parser_tests/bin/
+src/elf_parser_tests/woody_woodpacker
+stub_bin/
+packer_bin/
+packer
+stub.elf
+a.out
+*.d
+*.o
+bin/
+woody
+woody.packed
+woody_woodpacker

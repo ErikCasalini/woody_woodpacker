@@ -1,0 +1,152 @@
+-Open ELF
+-Check if s_isuid is set in permissions --> refuse
+-Map segments in memory
+-Find Interpreter
+-Map Interpreter in memory
+-Fix Aux in stack
+-Jump at Interpreter::_entry
+
+
+What dynamic linker needs :
+-PT_LOADS
+-PT_INTERP --> Check if file name is null terminated
+-PT_GNU_STACK -->  Look for PT_GNU_STACK.p_flags, if PF_X --> mprotect() + x of the stack VMA
+-Personnality is already set by the kernel for x86 64 (which the stub also is)
+-Argv[] --> should remove argv[0] "./woody" |
+-Argc - 1									|--> mov of 8 argvs, envps and AT_
+-Auxv :
+	AT_PHDR
+	AT_PHNUM
+	AT_BASE
+	AT_ENTRY
+	AT_EXECFN
+
+
+    ------------------------------------------------------------- 0x7fff6c845000
+     0x7fff6c844ff8: 0x0000000000000000
+            _  4fec: './stackdump\0'                      <------+
+      env  /   4fe2: 'ENVVAR2=2\0'                               |    <----+
+           \_  4fd8: 'ENVVAR1=1\0'                               |   <---+ |
+           /   4fd4: 'two\0'                                     |       | |     <----+
+     args |    4fd0: 'one\0'                                     |       | |    <---+ |
+           \_  4fcb: 'zero\0'                                    |       | |   <--+ | |
+               3020: random gap padded to 16B boundary           |       | |      | | |
+    - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -|       | |      | | |
+               3019: 'x86_64\0'                        <-+       |       | |      | | |
+     auxv      3009: random data: ed99b6...2adcc7        | <-+   |       | |      | | |
+     data      3000: zero padding to align stack         |   |   |       | |      | | |
+    . . . . . . . . . . . . . . . . . . . . . . . . . . .|. .|. .|       | |      | | |
+               2ff0: AT_NULL(0)=0                        |   |   |       | |      | | |
+               2fe0: AT_PLATFORM(15)=0x7fff6c843019    --+   |   |       | |      | | |
+               2fd0: AT_EXECFN(31)=0x7fff6c844fec      ------|---+       | |      | | |
+               2fc0: AT_RANDOM(25)=0x7fff6c843009      ------+           | |      | | |
+      ELF      2fb0: AT_SECURE(23)=0                                     | |      | | |
+    auxiliary  2fa0: AT_EGID(14)=1000                                    | |      | | |
+     vector:   2f90: AT_GID(13)=1000                                     | |      | | |
+    (id,val)   2f80: AT_EUID(12)=1000                                    | |      | | |
+      pairs    2f70: AT_UID(11)=1000                                     | |      | | |
+               2f60: AT_ENTRY(9)=0x4010c0                                | |      | | |
+               2f50: AT_FLAGS(8)=0                                       | |      | | |
+               2f40: AT_BASE(7)=0x7ff6c1122000                           | |      | | |
+               2f30: AT_PHNUM(5)=9                                       | |      | | |
+               2f20: AT_PHENT(4)=56                                      | |      | | |
+               2f10: AT_PHDR(3)=0x400040                                 | |      | | |
+               2f00: AT_CLKTCK(17)=100                                   | |      | | |
+               2ef0: AT_PAGESZ(6)=4096                                   | |      | | |
+               2ee0: AT_HWCAP(16)=0xbfebfbff                             | |      | | |
+               2ed0: AT_SYSINFO_EHDR(33)=0x7fff6c86b000                  | |      | | |
+    . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .        | |      | | |
+               2ec8: environ[2]=(nil)                                    | |      | | |
+               2ec0: environ[1]=0x7fff6c844fe2         ------------------|-+      | | |
+               2eb8: environ[0]=0x7fff6c844fd8         ------------------+        | | |
+               2eb0: argv[3]=(nil)                                                | | |
+               2ea8: argv[2]=0x7fff6c844fd4            ---------------------------|-|-+
+               2ea0: argv[1]=0x7fff6c844fd0            ---------------------------|-+
+               2e98: argv[0]=0x7fff6c844fcb            ---------------------------+
+     0x7fff6c842e90: argc=3
+
+
+---------------------------------------------------------------------------------------------------------------------------------------
+
+packer :
+-the stub will be compiled separately from the packer's code, ensuring no absolute relocations are present. After checking that everything is good, it will be integrated to the packer binary (objcopy), in order to make it copyable fromt its own binary to the packed elf.
+-create new elf
+-if original elf is DYN, the packed elf is also DYN. The stub only needs to mmap NULL of good size to get a valid ASLR compliant chunk of memory where to store the original elf
+-if original elf is	EXEC, the packed elf is also EXEC. The packer must include a PT_LOAD that matches the base address of the original elf with enought size, the stub will mapp the original elf there
+	-also, the packer should refuse EXEC elfs with a too low/high base address. The reserved PT_LOAD must always be the first one
+-in both cases the packed elf wont contain an INTERP, nor a static/dynamic linked library. Its stub must be completely independent (no absolute relocations)
+-the original elf is stored in the last PT_LOAD in the packed elf. The PT_LOAD will start with a header (unencrypted) containing metadata for integrity check and decryption/decompression
+-if original elf is DYN its first PT_LOAD (that contains its header + PHDR) must have p_vaddr = 0
+-must copy the PT_GNU_STACK of the original elf to the packed elf (last PHDR index is ok)
+
+packer assumes :
+-Interpreter must be a valid ELF64 ET_DYN for x86-64, little-endian, with p_align <= runtime page_size for every PT_LOAD.
+-Stub entry point must be addr 0x0 of .stub.text section inside compiled stub ELF file, and generated code must be correct, independent and functionnal.
+
+packer checks :
+-Elf must be x86_64
+-Must have an Header
+-Must have a PHDR
+-Its PT_LOAD must be in ascending order
+-Must not have s_isuid set in permissions
+-Must be executable
+-Must be ET_DYN or ET_EXEC
+-Must be little endian
+-If ELF is ET_EXEC, its load address must not be < 0x10000 or > (0xMAX - memsize of all PT_LOADS)
+-Each PT_LOAD must have p_align equal to 0, 1, or a power of two.
+-If p_align > 1, p_vaddr % p_align must equal p_offset % p_align.
+-For ET_DYN, each PT_LOAD must have p_align <= runtime page_size.
+-If INTERP present, PT_INTERP filesz must be > 1
+-Compiled stub must have .stub.text and .stub.rodata sections
+
+-------------------MEMORY-------------------
+    PT_LOAD header + PHDR		PF_R		<-----+
+    PT_LOAD stub code + rodata	PF_R | PF_X		  |
+	PT_LOAD blob				PF_R | PF_W	  	  |
+												  |
+-------------------FILE--------------------		  |
+offset 0										  |
+[ELF header]	   -------------------------------+
+[Program headers]  -------------------------------+
+---padding---
+[stub code + rodata]
+---padding---
+[blob header]
+[encrypted blob]
+
+----------------BLOB HEADER----------------
+magic:				"WOODY\0"
+offset:				xxx
+compressed size:	xxx
+decompressed size:	xxx
+key:				xxx
+-------------------------------------------
+
+stub :
+-find our PHDR
+-find the last PT_LOAD containing the original compressed elf and check if its header is correct
+-decrypt in place
+-if we are DYN, mmap randomly the original elf
+-if we are EXEC mmap it in the empty PT_LOAD set up by the packer
+-find its PHDR
+-map its INTERP if present. If INTERP i ET_EXEC, we refuse the execution for the moment.
+-update the stack
+-jump to INTERP or entry
+
+
+
+PROBLEMS :
+-if 2 PT_LOADS are too far one from the other, the allocation of load_zone is too big --> FIXED
+
+FIX :
+-ET_EXEC le pakcer va mettre le stub dans une adresse qui ne coincide pas avec une des PT_LOADS de l'elf. On oublie aussi le PT_LOAD de reservation, et le stub va juste pouvoir map en NO_REPLACE.
+-ET_DYN on mappe effectivement toute la zone pour s'assurer que tout rentre, on garde l'adresse retournee comme base, puis on free direct. On map chaque PT_LOAD avec comme base l'adresse gardée.
+
+KNOWN LIMITATIONS:
+-stub machine code generation and extraction laks verfication :
+	-no cheks to ensure the code is independent and correct
+	-we assumes that the stub linking generates only .text and .rodata (no .data)
+-stub .text and .rodata sections are merged inside a single .stub section with both P_R and P_X
+-ET_EXEC elf interpreters are not supported
+-encryption quality is not the scope of the project
+-some original elf edge cases are probably not handled
