@@ -239,9 +239,8 @@ error_t	check_phdr(Elf64_Ehdr *target_header, size_t target_file_size)
 		if (target_program_headers[i].p_vaddr < prev_vaddr)
 			return (bad_pt_load_order);
 
-		if (target_program_headers[i].p_align != 0 &&
-			target_program_headers[i].p_align != 1 &&
-			target_program_headers[i].p_align % 2 != 0
+		if (target_program_headers[i].p_align > 1 &&
+			(target_program_headers[i].p_align & (target_program_headers[i].p_align - 1)) != 0
 		)
 			return (bad_p_align);
 
