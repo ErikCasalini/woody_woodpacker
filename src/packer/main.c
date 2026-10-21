@@ -7,6 +7,7 @@
 #include <inttypes.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include "../ft/libft.h"
 
 #ifndef LOWEST_VADDR
@@ -64,6 +65,7 @@ typedef enum error_e
 	bad_interp_name,
 	bad_page_sz,
 	et_exec_collide,
+	write_error,
 	unexpected_error
 } error_t;
 
@@ -74,67 +76,70 @@ void	print_error(error_t error)
 		case ok:
 			break;
 		case too_short:
-			printf("Error: file is too short for its ELF headers or segment contents\n");
+			fprintf(stderr, "Error: file is too short for its ELF headers or segment contents\n");
 			break;
 		case set_uid:
-			printf("Error: set-user-ID and set-group-ID files are not supported\n");
+			fprintf(stderr, "Error: set-user-ID and set-group-ID files are not supported\n");
 			break;
 		case not_a_file:
-			printf("Error: target is not a regular file\n");
+			fprintf(stderr, "Error: target is not a regular file\n");
 			break;
 		case bad_ident:
-			printf("Error: invalid or unsupported ELF identification\n");
+			fprintf(stderr, "Error: invalid or unsupported ELF identification\n");
 			break;
 		case bad_type:
-			printf("Error: ELF type must be ET_EXEC or ET_DYN\n");
+			fprintf(stderr, "Error: ELF type must be ET_EXEC or ET_DYN\n");
 			break;
 		case bad_machine:
-			printf("Error: only x86-64 ELF files are supported\n");
+			fprintf(stderr, "Error: only x86-64 ELF files are supported\n");
 			break;
 		case bad_version:
-			printf("Error: unsupported ELF version\n");
+			fprintf(stderr, "Error: unsupported ELF version\n");
 			break;
 		case bad_flags:
-			printf("Error: invalid ELF flags\n");
+			fprintf(stderr, "Error: invalid ELF flags\n");
 			break;
 		case bad_ehsize:
-			printf("Error: invalid ELF header size\n");
+			fprintf(stderr, "Error: invalid ELF header size\n");
 			break;
 		case bad_phentsize:
-			printf("Error: invalid program header entry size\n");
+			fprintf(stderr, "Error: invalid program header entry size\n");
 			break;
 		case bad_shoff:
-			printf("Error: invalid section header table offset\n");
+			fprintf(stderr, "Error: invalid section header table offset\n");
 			break;
 		case no_stub_section:
-			printf("Error: stub section not found\n");
+			fprintf(stderr, "Error: stub section not found\n");
 			break;
 		case no_phdr:
-			printf("Error: ELF program header table is missing\n");
+			fprintf(stderr, "Error: ELF program header table is missing\n");
 			break;
 		case bad_phdr:
-			printf("Error: invalid ELF program header\n");
+			fprintf(stderr, "Error: invalid ELF program header\n");
 			break;
 		case bad_pt_load_order:
-			printf("Error: PT_LOAD segments are not ordered by virtual address\n");
+			fprintf(stderr, "Error: PT_LOAD segments are not ordered by virtual address\n");
 			break;
 		case bad_pt_load_align:
-			printf("Error: PT_LOAD virtual address and file offset have incompatible alignment\n");
+			fprintf(stderr, "Error: PT_LOAD virtual address and file offset have incompatible alignment\n");
 			break;
 		case bad_p_align:
-			printf("Error: invalid segment alignment\n");
+			fprintf(stderr, "Error: invalid segment alignment\n");
 			break;
 		case bad_interp_name:
-			printf("Error: invalid ELF interpreter name\n");
+			fprintf(stderr, "Error: invalid ELF interpreter name\n");
 			break;
 		case bad_page_sz:
-			printf("Error: unable to determine system page size\n");
+			fprintf(stderr, "Error: unable to determine system page size\n");
 			break;
 		case et_exec_collide:
-			printf("Error: no address range available for the stub without overlapping the target ELF\n");
+			fprintf(stderr, "Error: no address range available for the stub without overlapping the target ELF\n");
+			break;
+		case write_error:
+			fprintf(stderr, "Error: unable to write output file\n");
 			break;
 		default:
-			printf("Error: unexpected error (%d)\n", error);
+			fprintf(stderr, "Error: unexpected error (%d)\n", error);
 	}
 }
 
@@ -598,20 +603,41 @@ error_t	fill_output_elf(int					output_fd,
 						payload_header_t	*encrypt_header)
 {
 	void	*start_stub_section;
+	ssize_t	written;
 
 	start_stub_section = (unsigned char*)packer_file_data + packer_stub_section->sh_offset;
 
-	write(output_fd, &output->header, sizeof(output->header));
-	write(output_fd, &output->phdrs_segment, sizeof(output->phdrs_segment));
-	write(output_fd, &output->stub_segment, sizeof(output->stub_segment));
-	write(output_fd, &output->payload_segment, sizeof(output->payload_segment));
-	write(output_fd, &output->gnu_stack_segment, sizeof(output->gnu_stack_segment));
+	written = write(output_fd, &output->header, sizeof(output->header));
+	if (written != (ssize_t)sizeof(output->header))
+		return (write_error);
 
-	write(output_fd, start_stub_section, packer_stub_section->sh_size);
+	written = write(output_fd, &output->phdrs_segment, sizeof(output->phdrs_segment));
+	if (written != (ssize_t)sizeof(output->phdrs_segment))
+		return (write_error);
 
-	write(output_fd, encrypt_header, sizeof(payload_header_t));
+	written = write(output_fd, &output->stub_segment, sizeof(output->stub_segment));
+	if (written != (ssize_t)sizeof(output->stub_segment))
+		return (write_error);
 
-	write(output_fd, target_file_data, encrypt_header->decompressed_size);
+	written = write(output_fd, &output->payload_segment, sizeof(output->payload_segment));
+	if (written != (ssize_t)sizeof(output->payload_segment))
+		return (write_error);
+
+	written = write(output_fd, &output->gnu_stack_segment, sizeof(output->gnu_stack_segment));
+	if (written != (ssize_t)sizeof(output->gnu_stack_segment))
+		return (write_error);
+
+	written = write(output_fd, start_stub_section, packer_stub_section->sh_size);
+	if (written != (ssize_t)packer_stub_section->sh_size)
+		return (write_error);
+
+	written = write(output_fd, encrypt_header, sizeof(payload_header_t));
+	if (written != (ssize_t)sizeof(payload_header_t))
+		return (write_error);
+
+	written = write(output_fd, target_file_data, encrypt_header->decompressed_size);
+	if (written != (ssize_t)encrypt_header->decompressed_size)
+		return (write_error);
 
 	return (ok);
 }
@@ -627,12 +653,13 @@ error_t	fill_output_elf(int					output_fd,
 */
 int main(int argc, char *argv[])
 {
-	int					target_fd;
-	int					packer_fd;
-	int					output_fd;
+	int					target_fd = -1;
+	int					packer_fd = -1;
+	int					output_fd = -1;
+	int					status = 1;
 	payload_header_t	encrypt_header = {0};
-	void				*target_file_data;
-	void				*packer_file_data;
+	void				*target_file_data = MAP_FAILED;
+	void				*packer_file_data = MAP_FAILED;
 	struct stat			target_st;
 	struct stat			packer_st;
 	elf_layout_t		output_layout = {0};
@@ -640,41 +667,55 @@ int main(int argc, char *argv[])
 	error_t				error;
 
 	if (argc < 2)
-		return (printf("Specify a filename\n"), 1);
+		return (fprintf(stderr, "Specify a filename\n"), 1);
 
 	/* OPEN FILE */
 	target_fd = open(argv[1], O_RDONLY);
-	if (target_fd < 0)
-		return (printf("Error: open() %s\n", strerror(errno)), 1);
+	if (target_fd < 0) {
+		perror("Error: open()");
+		goto cleanup;
+	}
 
-	if (fstat(target_fd, &target_st) < 0)
-		return (printf("Error: fstat() %s\n", strerror(errno)), 1);
+	if (fstat(target_fd, &target_st) < 0) {
+		perror("Error: fstat()");
+		goto cleanup;
+	}
 
 	target_file_data = mmap(NULL, target_st.st_size, PROT_READ, MAP_PRIVATE, target_fd, 0);
-	if (target_file_data == NULL)
-		return (printf("Error: mmap() %s\n", strerror(errno)), 1);
+	if (target_file_data == MAP_FAILED) {
+		perror("Error: mmap()");
+		goto cleanup;
+	}
 
 	error = check_elf_validity(target_file_data, target_st);
 	if (error != ok) {
 		print_error(error);
-		return (1);
+		goto cleanup;
 	}
 
 	/* OPEN OURSELVES */
 	packer_fd = open(argv[0], O_RDONLY);
-	if (packer_fd < 0)
-		return (printf("Error: open() %s\n", strerror(errno)), 1);
+	if (packer_fd < 0) {
+		perror("Error: open()");
+		goto cleanup;
+	}
 
-	if (fstat(packer_fd, &packer_st) < 0)
-		return (printf("Error: fstat() %s\n", strerror(errno)), 1);
+	if (fstat(packer_fd, &packer_st) < 0) {
+		perror("Error: fstat()");
+		goto cleanup;
+	}
 
 	packer_file_data = mmap(NULL, packer_st.st_size, PROT_READ, MAP_PRIVATE, packer_fd, 0);
-	if (packer_file_data == NULL)
-		return (printf("Error: mmap() %s\n", strerror(errno)), 1);
+	if (packer_file_data == MAP_FAILED) {
+		perror("Error: mmap()");
+		goto cleanup;
+	}
 
 	packer_stub_section = find_section(packer_file_data, ".stub");
-	if (packer_stub_section == NULL)
-		return (printf("Error: .stub.text section not found\n"), 1);
+	if (packer_stub_section == NULL) {
+		fprintf(stderr, "Error: .stub.text section not found\n");
+		goto cleanup;
+	}
 
 	error = init_output_headers(
 				&output_layout,
@@ -684,7 +725,7 @@ int main(int argc, char *argv[])
 			);
 	if (error != ok) {
 		print_error(error);
-		return (1);
+		goto cleanup;
 	}
 
 	ft_memcpy(encrypt_header.magic, "WOODY", sizeof("WOODY"));
@@ -696,16 +737,44 @@ int main(int argc, char *argv[])
 
 	/* CREATE OUTPUT ELF */
 	output_fd = open("woody", O_CREAT | O_WRONLY | O_TRUNC, 0755);
-	if (output_fd < 0)
-		return (printf("Error: open() %s\n", strerror(errno)), 1);
-
-	error = fill_output_elf(output_fd, &output_layout, packer_stub_section, packer_file_data, target_file_data, &encrypt_header);
-	if (error != ok) {
-		print_error(error);
-		return (1);
+	if (output_fd < 0) {
+		perror("Error: open()");
+		goto cleanup;
 	}
 
-	printf("ELF successuflly packed!\n");
+	error = fill_output_elf(
+				output_fd,
+				&output_layout,
+				packer_stub_section,
+				packer_file_data,
+				target_file_data,
+				&encrypt_header
+			);
+	if (error != ok) {
+		print_error(error);
+		if (syscall(SYS_unlink, "woody") < 0)
+			perror("Error: unlink()");
+		goto cleanup;
+	}
 
-	return (0);
+	/* Success */
+	status = 0;
+
+cleanup:
+	if (output_fd >= 0 && close(output_fd) < 0) {
+		perror("Error: close()");
+		status = 1;
+	}
+	if (packer_file_data != MAP_FAILED)
+		munmap(packer_file_data, packer_st.st_size);
+	if (packer_fd >= 0)
+		close(packer_fd);
+	if (target_file_data != MAP_FAILED)
+		munmap(target_file_data, target_st.st_size);
+	if (target_fd >= 0)
+		close(target_fd);
+	if (status == 0)
+		printf("ELF successuflly packed!\n");
+
+	return (status);
 }
