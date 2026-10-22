@@ -74,7 +74,7 @@ typedef enum error_e
 	bad_close
 } error_t;
 
-void	print_error(error_t error)
+static void	print_error(error_t error)
 {
 	switch (error)
 	{
@@ -169,7 +169,7 @@ void	print_error(error_t error)
 	}
 }
 
-error_t	check_file_metadata(struct stat target_st)
+static error_t	check_file_metadata(struct stat target_st)
 {
 	if (!S_ISREG(target_st.st_mode))
     	return (not_a_file);
@@ -180,7 +180,7 @@ error_t	check_file_metadata(struct stat target_st)
 	return (ok);
 }
 
-error_t check_header(mapped_file_t *file)
+static error_t	check_header(const mapped_file_t *file)
 {
 	Elf64_Ehdr	*header;
 
@@ -227,9 +227,9 @@ error_t check_header(mapped_file_t *file)
 	return (ok);
 }
 
-error_t	check_interp_name(Elf64_Ehdr *header, Elf64_Phdr *pt_interp)
+static error_t	check_interp_name(const Elf64_Ehdr *header, const Elf64_Phdr *pt_interp)
 {
-	char *interp_name;
+	char	*interp_name;
 
 	if (!header || !pt_interp)
 		return (bad_interp_name);
@@ -245,7 +245,7 @@ error_t	check_interp_name(Elf64_Ehdr *header, Elf64_Phdr *pt_interp)
 	return (ok);
 }
 
-error_t	check_phdr(mapped_file_t *file)
+static error_t	check_phdr(const mapped_file_t *file)
 {
 	Elf64_Ehdr	*header;
 	Elf64_Phdr	*phdrs;
@@ -328,7 +328,7 @@ error_t	check_phdr(mapped_file_t *file)
 	return (ok);
 }
 
-error_t	check_elf_validity(mapped_file_t *file)
+static error_t	check_elf_validity(const mapped_file_t *file)
 {
 	error_t	error;
 
@@ -350,11 +350,8 @@ error_t	check_elf_validity(mapped_file_t *file)
 	return (ok);
 }
 
-void	init_header(Elf64_Ehdr *header, Elf64_Ehdr *target_header)
+static void	init_header(Elf64_Ehdr *header, const Elf64_Ehdr *target_header)
 {
-	if (!header || !target_header)
-		return;
-
 	ft_memcpy(header->e_ident, target_header->e_ident, sizeof(header->e_ident));
 
 	header->e_type = target_header->e_type;
@@ -370,7 +367,7 @@ void	init_header(Elf64_Ehdr *header, Elf64_Ehdr *target_header)
 	header->e_shstrndx = 0;
 }
 
-uintptr_t	round_to_page_up(uintptr_t value, uint64_t page_size)
+static uintptr_t	round_to_page_up(uintptr_t value, uint64_t page_size)
 {
 	uintptr_t tmp;
 
@@ -381,12 +378,12 @@ uintptr_t	round_to_page_up(uintptr_t value, uint64_t page_size)
 	return (value + page_size - tmp);
 }
 
-uintptr_t	round_to_page_down(uintptr_t value, uint64_t page_size)
+static uintptr_t	round_to_page_down(uintptr_t value, uint64_t page_size)
 {
 	return (value - (value % page_size));
 }
 
-mapping_range_t	get_mapping_range(Elf64_Phdr *phdr, Elf64_Half phnum, uint64_t page_size)
+static mapping_range_t	get_mapping_range(const Elf64_Phdr *phdr, Elf64_Half phnum, uint64_t page_size)
 {
 	mapping_range_t	range = {0};
 	uintptr_t	segment_end;
@@ -424,7 +421,7 @@ mapping_range_t	get_mapping_range(Elf64_Phdr *phdr, Elf64_Half phnum, uint64_t p
 	return (range);
 }
 
-intptr_t	select_output_base_addr(Elf64_Ehdr *target_file_data, size_t output_memsz, int64_t page_size)
+static intptr_t	select_output_base_addr(const Elf64_Ehdr *target_file_data, size_t output_memsz, int64_t page_size)
 {
 	Elf64_Phdr		*target_phdrs;
 	mapping_range_t	target_load_range;
@@ -459,7 +456,7 @@ intptr_t	select_output_base_addr(Elf64_Ehdr *target_file_data, size_t output_mem
  by our build. For the moment, no bounds or overflow checks are performed.
  Malformed metadata may cause undefined behavior.
  If no "name" section is found, NULL is returned. */
-Elf64_Shdr	*find_packer_section(const mapped_file_t *packer, const char *name)
+static const Elf64_Shdr	*find_packer_section(const mapped_file_t *packer, const char *name)
 {
 	Elf64_Ehdr	*header;
 	Elf64_Shdr	*shdrs;
@@ -492,7 +489,7 @@ Elf64_Shdr	*find_packer_section(const mapped_file_t *packer, const char *name)
 	return (NULL);
 }
 
-void	init_phdrs_segment(Elf64_Phdr *phdrs_segment, Elf64_Off file_off, intptr_t vaddr)
+static void	init_phdrs_segment(Elf64_Phdr *phdrs_segment, Elf64_Off file_off, intptr_t vaddr)
 {
 	phdrs_segment->p_type = PT_LOAD;
 	phdrs_segment->p_flags = PF_R;
@@ -505,11 +502,8 @@ void	init_phdrs_segment(Elf64_Phdr *phdrs_segment, Elf64_Off file_off, intptr_t 
 	phdrs_segment->p_align = 0x1000;
 }
 
-void	init_stub_segment(Elf64_Phdr *stub_segment, Elf64_Shdr *packer_stub_section, Elf64_Off file_off, intptr_t vaddr)
+static void	init_stub_segment(Elf64_Phdr *stub_segment, const Elf64_Shdr *packer_stub_section, Elf64_Off file_off, intptr_t vaddr)
 {
-	if (!stub_segment)
-		return;
-
 	stub_segment->p_type = PT_LOAD;
 	stub_segment->p_flags = PF_R | PF_X;
 	stub_segment->p_offset = file_off;
@@ -520,7 +514,7 @@ void	init_stub_segment(Elf64_Phdr *stub_segment, Elf64_Shdr *packer_stub_section
 	stub_segment->p_align = 0x1000;
 }
 
-error_t	init_payload_segment(Elf64_Phdr *payload_segment, size_t target_size, Elf64_Off file_off, uintptr_t vaddr, uint64_t alignment)
+static error_t	init_payload_segment(Elf64_Phdr *payload_segment, size_t target_size, Elf64_Off file_off, uintptr_t vaddr, uint64_t alignment)
 {
 	size_t		payload_size;
 	uintptr_t	payload_end;
@@ -552,14 +546,11 @@ error_t	init_payload_segment(Elf64_Phdr *payload_segment, size_t target_size, El
 	return (ok);
 }
 
-/* We assume that ELF validity check has already been ensured */
-void	init_gnu_stack_segment(Elf64_Phdr *gnu_stack_segment, Elf64_Ehdr *target_file_data)
+/* Requires a non-NULL, zero-initialized destination and a validated target ELF. */
+static void	init_gnu_stack_segment(Elf64_Phdr *gnu_stack_segment, const Elf64_Ehdr *target_file_data)
 {
 	Elf64_Half	target_phnum;
 	Elf64_Phdr	*target_phdr;
-
-	if (!gnu_stack_segment || !target_file_data)
-		return;
 
 	gnu_stack_segment->p_type = PT_GNU_STACK;
 	gnu_stack_segment->p_flags = PF_R | PF_W;
@@ -577,17 +568,18 @@ void	init_gnu_stack_segment(Elf64_Phdr *gnu_stack_segment, Elf64_Ehdr *target_fi
 	}
 }
 
-error_t	init_output_headers(elf_layout_t *output, mapped_file_t *target, Elf64_Shdr *packer_stub_section)
+static error_t	init_output_headers(elf_layout_t *output, const mapped_file_t *target, const Elf64_Shdr *packer_stub_section)
 {
-	off_t			file_off;
-	size_t			prev_mem_end;
-	intptr_t		vaddr;
-	intptr_t		base_addr;
-	int64_t			alignment;
-	size_t			output_memsz;
-	error_t			error;
+	off_t		file_off;
+	size_t		prev_mem_end;
+	intptr_t	vaddr;
+	intptr_t	base_addr;
+	int64_t		alignment;
+	size_t		output_memsz;
+	error_t		error;
 
-	if (!output || !target || !target->data || !packer_stub_section)
+	if (!output || !target || !target->data
+		|| target->data == MAP_FAILED || !packer_stub_section)
 		return (unexpected_error);
 
 	alignment = sysconf(_SC_PAGESIZE);
@@ -642,6 +634,7 @@ error_t	init_output_headers(elf_layout_t *output, mapped_file_t *target, Elf64_S
 	return (ok);
 }
 
+#ifdef PACKER_DEBUG
 static void	print_output_segment(const char *name, const Elf64_Phdr *segment)
 {
 	printf("\n%s\n", name);
@@ -658,9 +651,9 @@ static void	print_output_segment(const char *name, const Elf64_Phdr *segment)
 	printf("  p_align:  0x%016" PRIx64 "\n", segment->p_align);
 }
 
-void	print_output_layout(const elf_layout_t *output)
+static void	print_output_layout(const elf_layout_t *output)
 {
-	const Elf64_Ehdr	*header = &output->header;
+	Elf64_Ehdr	*header = &output->header;
 
 	printf("ELF header\n");
 	printf("  e_ident:    ");
@@ -685,18 +678,19 @@ void	print_output_layout(const elf_layout_t *output)
 	print_output_segment("payload_segment (PT_LOAD)", &output->payload_segment);
 	print_output_segment("gnu_stack_segment (GNU_STACK)", &output->gnu_stack_segment);
 }
+#endif
 
-error_t	fill_output_elf(int					output_fd,
-						elf_layout_t		*output,
-						Elf64_Shdr			*packer_stub_section,
-						Elf64_Ehdr			*packer_file_data,
-						Elf64_Ehdr			*target_file_data,
-						payload_header_t	*payload_header)
+static error_t	fill_output_elf(int						output_fd,
+								const elf_layout_t		*output,
+								const Elf64_Shdr		*packer_stub_section,
+								const Elf64_Ehdr		*packer_file_data,
+								const Elf64_Ehdr		*target_file_data,
+								const payload_header_t	*payload_header)
 {
 	void	*start_stub_section;
 	ssize_t	written;
 
-	start_stub_section = (unsigned char*)packer_file_data + packer_stub_section->sh_offset;
+	start_stub_section = (const unsigned char*)packer_file_data + packer_stub_section->sh_offset;
 
 	written = write(output_fd, &output->header, sizeof(output->header));
 	if (written != (ssize_t)sizeof(output->header))
@@ -733,7 +727,7 @@ error_t	fill_output_elf(int					output_fd,
 	return (ok);
 }
 
-error_t	map_file(const char *path, mapped_file_t *file)
+static error_t	map_file(const char *path, mapped_file_t *file)
 {
 	error_t	error = ok;
 	int		fd;
@@ -808,11 +802,8 @@ cleanup:
 	return (-1);
 }
 
-void	init_payload_header(payload_header_t *payload_header, mapped_file_t *target)
+static void	init_payload_header(payload_header_t *payload_header, const mapped_file_t *target)
 {
-	if (!payload_header || !target)
-		return;
-
 	ft_memcpy(payload_header->magic, PAYLOAD_MAGIC, sizeof(PAYLOAD_MAGIC));
 	payload_header->compressed_size	= (size_t)target->st.st_size;
 	payload_header->decompressed_size = (size_t)target->st.st_size;
@@ -878,7 +869,9 @@ int main(int argc, char *argv[])
 
 	init_payload_header(&payload_header, &target);
 
-	// print_output_layout(&output_layout);
+#ifdef PACKER_DEBUG
+	print_output_layout(&output_layout);
+#endif
 
 	output_fd = create_output_file("woody", &target.st);
 	if (output_fd < 0) {
