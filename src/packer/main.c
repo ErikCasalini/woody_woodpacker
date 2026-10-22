@@ -42,6 +42,12 @@ typedef struct elf_layout_s
 	Elf64_Phdr	gnu_stack_segment;
 } elf_layout_t;
 
+typedef struct mapped_file_s
+{
+	void		*data;
+	struct stat st;
+} mapped_file_t;
+
 typedef enum error_e
 {
 	ok,
@@ -66,7 +72,12 @@ typedef enum error_e
 	bad_page_sz,
 	et_exec_collide,
 	write_error,
-	unexpected_error
+	unexpected_error,
+	bad_open,
+	bad_mmap,
+	bad_munmap,
+	bad_fstat,
+	bad_close
 } error_t;
 
 void	print_error(error_t error)
@@ -138,6 +149,21 @@ void	print_error(error_t error)
 		case write_error:
 			fprintf(stderr, "Error: unable to write output file\n");
 			break;
+		case bad_open:
+			perror("Error: open()");
+			break;
+		case bad_mmap:
+			perror("Error: mmap()");
+			break;
+		case bad_munmap:
+			perror("Error: munmap()");
+			break;
+		case bad_fstat:
+			perror("Error: fstat()");
+			break;
+		case bad_close:
+			perror("Error: close()");
+			break;
 		default:
 			fprintf(stderr, "Error: unexpected error (%d)\n", error);
 	}
@@ -154,133 +180,165 @@ error_t	check_file_metadata(struct stat target_st)
 	return (ok);
 }
 
-error_t check_header(Elf64_Ehdr *target_header, size_t target_file_size)
+error_t check_header(mapped_file_t *file)
 {
-	if (!target_header)
+	Elf64_Ehdr	*header;
+
+	if (!file || file->data == MAP_FAILED)
 		return (unexpected_error);
 
-	if (target_file_size < sizeof(Elf64_Ehdr))
+	if ((size_t)file->st.st_size < sizeof(Elf64_Ehdr))
 		return (too_short);
 
-	if (target_header->e_ident[EI_MAG0] != ELFMAG0)
+	header = (Elf64_Ehdr*)file->data;
+
+	if (header->e_ident[EI_MAG0] != ELFMAG0)
 		return (bad_ident);
-	if (target_header->e_ident[EI_MAG1] != ELFMAG1)
+	if (header->e_ident[EI_MAG1] != ELFMAG1)
 		return (bad_ident);
-	if (target_header->e_ident[EI_MAG2] != ELFMAG2)
+	if (header->e_ident[EI_MAG2] != ELFMAG2)
 		return (bad_ident);
-	if (target_header->e_ident[EI_MAG3] != ELFMAG3)
+	if (header->e_ident[EI_MAG3] != ELFMAG3)
 		return (bad_ident);
-	if (target_header->e_ident[EI_CLASS] != ELFCLASS64)
+	if (header->e_ident[EI_CLASS] != ELFCLASS64)
 		return (bad_ident);
-	if (target_header->e_ident[EI_DATA] != ELFDATA2LSB)
+	if (header->e_ident[EI_DATA] != ELFDATA2LSB)
 		return (bad_ident);
-	if (target_header->e_ident[EI_VERSION] != EV_CURRENT)
+	if (header->e_ident[EI_VERSION] != EV_CURRENT)
 		return (bad_ident);
-	if (target_header->e_ident[EI_OSABI] != ELFOSABI_SYSV
-		&& target_header->e_ident[EI_OSABI] != ELFOSABI_GNU)
+	if (header->e_ident[EI_OSABI] != ELFOSABI_SYSV
+		&& header->e_ident[EI_OSABI] != ELFOSABI_GNU)
 		return (bad_ident);
-	if (target_header->e_ident[EI_ABIVERSION] != 0)
+	if (header->e_ident[EI_ABIVERSION] != 0)
 		return (bad_ident);
-	if (target_header->e_type != ET_EXEC && target_header->e_type != ET_DYN)
+	if (header->e_type != ET_EXEC && header->e_type != ET_DYN)
 		return (bad_type);
-	if (target_header->e_machine != EM_X86_64)
+	if (header->e_machine != EM_X86_64)
 		return (bad_machine);
-	if (target_header->e_version != EV_CURRENT)
+	if (header->e_version != EV_CURRENT)
 		return (bad_version);
-	if (target_header->e_flags != 0)
+	if (header->e_flags != 0)
 		return (bad_flags);
-	if (target_header->e_ehsize != sizeof(Elf64_Ehdr))
+	if (header->e_ehsize != sizeof(Elf64_Ehdr))
 		return (bad_ehsize);
-	if (target_header->e_phentsize != sizeof(Elf64_Phdr))
+	if (header->e_phentsize != sizeof(Elf64_Phdr))
 		return (bad_phentsize);
 
 	return (ok);
 }
 
-int	check_interp_name(Elf64_Ehdr *target_header, Elf64_Phdr *pt_interp)
+int	check_interp_name(Elf64_Ehdr *header, Elf64_Phdr *pt_interp)
 {
 	char *interp_name;
 
-	if (!target_header || !pt_interp)
+	if (!header || !pt_interp)
 		return (-1);
 
 	if (pt_interp->p_filesz <= 1)
-		return (1);
+		return (-1);
 
-	interp_name = (char*)((unsigned char*)target_header + pt_interp->p_offset);
+	interp_name = (char*)((unsigned char*)header + pt_interp->p_offset);
 
-	if (interp_name[pt_interp->p_filesz] != '\0')
+	if (interp_name[pt_interp->p_filesz - 1] != '\0')
 		return (-1);
 
 	return (0);
 }
 
-error_t	check_phdr(Elf64_Ehdr *target_header, size_t target_file_size)
+error_t	check_phdr(mapped_file_t *file)
 {
-	Elf64_Phdr	*target_program_headers;
+	Elf64_Ehdr	*header;
+	Elf64_Phdr	*phdrs;
+	size_t		phdr_size;
+	size_t		file_sz;
 	Elf64_Phdr	*pt_interp = NULL;
 	uintptr_t	prev_vaddr = 0;
-	size_t		farthest_offset = 0;
+	uintptr_t	segment_end;
+	int64_t		page_size;
 
-	if (!target_header->e_phoff || !target_header->e_phnum)
+	if (!file || file->data == MAP_FAILED)
+		return (unexpected_error);
+
+	page_size = sysconf(_SC_PAGESIZE);
+	if (page_size <= 0)
+	    return (bad_page_sz);
+
+	header = (Elf64_Ehdr*)file->data;
+	file_sz = (size_t)file->st.st_size;
+
+	if (!header->e_phoff || !header->e_phnum)
 		return (no_phdr);
 
 	/* Checks if file has enought space for all its pretended phdrs */
-	if (target_header->e_phoff + (target_header->e_phnum * target_header->e_phentsize) > target_file_size)
+	phdr_size = (size_t)header->e_phnum * sizeof(Elf64_Phdr);
+	if (header->e_phoff > file_sz
+		|| phdr_size > file_sz - header->e_phoff)
 		return (too_short);
 
-	target_program_headers = (Elf64_Phdr*)((unsigned char*)target_header + target_header->e_phoff);
+	phdrs = (Elf64_Phdr*)((unsigned char*)header + header->e_phoff);
 
-	for (Elf64_Half i = 0; i < target_header->e_phnum; i++) {
-		if (target_program_headers[i].p_type == PT_INTERP && pt_interp == NULL)
-			pt_interp = &target_program_headers[i];
+	for (Elf64_Half i = 0; i < header->e_phnum; i++) {
+		if (phdrs[i].p_type == PT_INTERP && pt_interp == NULL)
+			pt_interp = &phdrs[i];
 
-		if (target_program_headers[i].p_offset + target_program_headers[i].p_filesz > farthest_offset)
-			farthest_offset = target_program_headers[i].p_offset + target_program_headers[i].p_filesz;
+		if (phdrs[i].p_type == PT_NULL)
+			continue;
+		/* Checks if file has enought space for phdr content */
+		if (phdrs[i].p_offset > file_sz
+			|| phdrs[i].p_filesz > file_sz - phdrs[i].p_offset)
+			return (too_short);
 
-		if (target_program_headers[i].p_type != PT_LOAD)
+		if (phdrs[i].p_type != PT_LOAD)
 			continue;
 
-		if (target_program_headers[i].p_vaddr < prev_vaddr)
-			return (bad_pt_load_order);
+		if (phdrs[i].p_filesz > phdrs[i].p_memsz)
+			return (bad_phdr);
 
-		if (target_program_headers[i].p_align > 1 &&
-			(target_program_headers[i].p_align & (target_program_headers[i].p_align - 1)) != 0
+		/* Ensure segment_end wont overflow */
+		if (phdrs[i].p_memsz > UINT64_MAX - phdrs[i].p_vaddr)
+			return (bad_phdr);
+		segment_end = phdrs[i].p_vaddr + phdrs[i].p_memsz;
+		/* Ensure the segment round up on page_size wont overflow */
+		if (segment_end > UINT64_MAX - ((uint64_t)page_size - 1))
+			return (bad_phdr);
+
+		if (phdrs[i].p_vaddr < prev_vaddr)
+			return (bad_pt_load_order);
+		prev_vaddr = phdrs[i].p_vaddr;
+
+		if (phdrs[i].p_align > 1 &&
+			(phdrs[i].p_align & (phdrs[i].p_align - 1)) != 0
 		)
 			return (bad_p_align);
 
-		if (target_program_headers[i].p_align > 1 &&
-			(target_program_headers[i].p_vaddr % target_program_headers[i].p_align) != (target_program_headers[i].p_offset % target_program_headers[i].p_align)
+		if (phdrs[i].p_align > 1 &&
+			(phdrs[i].p_vaddr % phdrs[i].p_align) != (phdrs[i].p_offset % phdrs[i].p_align)
 		)
 			return (bad_pt_load_align);
 	}
 
-	/* Checks if file has enought space for all the content of its phdrs */
-	if (farthest_offset > target_file_size)
-		return (too_short);
-
-	if (check_interp_name(target_header, pt_interp) < 0)
+	if (pt_interp && check_interp_name(header, pt_interp) < 0)
 				return (bad_interp_name);
 
 	return (ok);
 }
 
-error_t	check_elf_validity(Elf64_Ehdr *target_header, struct stat target_st)
+error_t	check_elf_validity(mapped_file_t *file)
 {
 	error_t	error;
 
-	if (!target_header)
+	if (!file || file->data == MAP_FAILED)
 		return (unexpected_error);
 
-	error = check_file_metadata(target_st);
+	error = check_file_metadata(file->st);
 	if (error)
 		return (error);
 
-	error = check_header(target_header, target_st.st_size);
+	error = check_header(file);
 	if (error)
 		return (error);
 
-	error = check_phdr(target_header, target_st.st_size);
+	error = check_phdr(file);
 	if (error)
 		return (error);
 
@@ -389,34 +447,42 @@ intptr_t	select_output_base_addr(Elf64_Ehdr *target_file_data, size_t output_mem
 	return (-1);
 }
 
-Elf64_Shdr	*find_section(Elf64_Ehdr *packer_header, char *name)
+/* This function searches for a "name" section in a mapped file.
+ The function must be used only on the tursted packer file produced
+ by our build. For the moment, no bounds or overflow checks are performed.
+ Malformed metadata may cause undefined behavior.
+ If no "name" section is found, NULL is returned. */
+Elf64_Shdr	*find_packer_section(const mapped_file_t *packer, const char *name)
 {
-	Elf64_Shdr	*shdr_table;
+	Elf64_Ehdr	*header;
+	Elf64_Shdr	*shdrs;
 	char		*section_names;
-	Elf64_Shdr	*section_header = NULL;
+	size_t		name_len;
 
-	if (!packer_header || !name)
+	if (!packer || !name)
 		return (NULL);
 
-	shdr_table = (Elf64_Shdr*)((unsigned char*)packer_header + packer_header->e_shoff);
-	if (!shdr_table ||
-		!name ||
-		ft_strlen(name) < 1)
+	name_len = ft_strlen(name);
+	header = packer->data;
+	if (!header
+		|| !header->e_shoff
+		|| name_len < 1)
 		return (NULL);
-	section_names = (char*)packer_header + shdr_table[packer_header->e_shstrndx].sh_offset;
 
-	for (Elf64_Half i = 0; i < packer_header->e_shnum; i++) {
-		if (ft_strncmp(section_names + shdr_table[i].sh_name,
-				name,
-				ft_strlen(name)
-			) == 0
-		) {
-			section_header = &shdr_table[i];
-			break;
+	shdrs = (Elf64_Shdr*)((unsigned char*)header + header->e_shoff);
+	section_names = (char*)header + shdrs[header->e_shstrndx].sh_offset;
+
+	for (Elf64_Half i = 0; i < header->e_shnum; i++) {
+		if (ft_strncmp(section_names + shdrs[i].sh_name,
+					name,
+					name_len + 1
+				) == 0
+			) {
+			return (&shdrs[i]);
 		}
 	}
 
-	return (section_header);
+	return (NULL);
 }
 
 void	init_phdrs_segment(Elf64_Phdr *phdrs_segment, Elf64_Off file_off, intptr_t vaddr)
@@ -491,7 +557,7 @@ void	init_gnu_stack_segment(Elf64_Phdr *gnu_stack_segment, Elf64_Ehdr *target_fi
 on a virtual memory address. This inply that no extra memory
 padding will be needed, and the in-memory layout of those sections
 will be the same as their in-file layout */
-error_t	init_output_headers(elf_layout_t *output, Elf64_Ehdr *target_file_data, size_t target_file_size, Elf64_Shdr *packer_stub_section)
+error_t	init_output_headers(elf_layout_t *output, mapped_file_t *target, Elf64_Shdr *packer_stub_section)
 {
 	off_t			file_off;
 	size_t			prev_mem_end;
@@ -500,14 +566,14 @@ error_t	init_output_headers(elf_layout_t *output, Elf64_Ehdr *target_file_data, 
 	int64_t			alignment;
 	size_t			output_memsz;
 
-	if (!output || !target_file_data || !packer_stub_section)
+	if (!output || !target || !target->data || !packer_stub_section)
 		return (unexpected_error);
 
 	alignment = sysconf(_SC_PAGESIZE);
 	if (alignment == -1)
 		return (bad_page_sz);
 
-	init_header(&output->header, target_file_data);
+	init_header(&output->header, target->data);
 
 	file_off = 0;
 	vaddr = 0;
@@ -521,9 +587,9 @@ error_t	init_output_headers(elf_layout_t *output, Elf64_Ehdr *target_file_data, 
 	prev_mem_end = output->stub_segment.p_vaddr + output->stub_segment.p_memsz;
 	file_off = output->stub_segment.p_offset + output->stub_segment.p_filesz;
 	vaddr = round_to_page_up(prev_mem_end, alignment) + (file_off % alignment);
-	init_payload_segment(&output->payload_segment, sizeof(payload_header_t) + target_file_size, file_off, vaddr);
+	init_payload_segment(&output->payload_segment, sizeof(payload_header_t) + target->st.st_size, file_off, vaddr);
 
-	init_gnu_stack_segment(&output->gnu_stack_segment, target_file_data);
+	init_gnu_stack_segment(&output->gnu_stack_segment, target->data);
 
 	/* We calculate the total page space that our output ELF will require */
 	output_memsz = (size_t)round_to_page_up(
@@ -532,7 +598,7 @@ error_t	init_output_headers(elf_layout_t *output, Elf64_Ehdr *target_file_data, 
 								alignment
 							);
 
-	base_addr = select_output_base_addr(target_file_data, output_memsz, alignment);
+	base_addr = select_output_base_addr(target->data, output_memsz, alignment);
 	if (base_addr < 0)
 		return (et_exec_collide);
 
@@ -642,6 +708,92 @@ error_t	fill_output_elf(int					output_fd,
 	return (ok);
 }
 
+error_t	map_file(const char *path, mapped_file_t *file)
+{
+	error_t	error = ok;
+	int		fd;
+	void	*data;
+	int		errno_backup;
+
+	if (!path || !file)
+		return (unexpected_error);
+
+	file->data = MAP_FAILED;
+	fd = open(path, O_RDONLY);
+	if (fd < 0)
+		return (bad_open);
+
+	if (fstat(fd, &file->st) < 0) {
+		error = bad_fstat;
+		goto cleanup;
+	}
+
+	data = mmap(NULL, file->st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+	if (data == MAP_FAILED) {
+		error = bad_mmap;
+		goto cleanup;
+	}
+
+	if (close(fd) < 0) {
+		errno_backup = errno;
+		munmap(data, file->st.st_size);
+		errno = errno_backup;
+		return (bad_close);
+	}
+
+	file->data = data;
+	return (ok);
+
+cleanup:
+	errno_backup = errno;
+	close(fd);
+	errno = errno_backup;
+	return (error);
+}
+
+static int	create_output_file(const char *path, const struct stat *target_st)
+{
+	int			fd;
+	int			errno_backup;
+	struct stat	output_st;
+	/* We avoid O_TRUNC in case target and output are
+	same file */
+	fd = open(path, O_CREAT | O_WRONLY, 0755);
+	if (fd < 0)
+		return (-1);
+
+	if (fstat(fd, &output_st) < 0)
+		goto cleanup;
+	/* We ensure target and output files are not the same */
+	if (target_st->st_dev == output_st.st_dev
+		&& target_st->st_ino == output_st.st_ino) {
+		errno = EINVAL;
+		goto cleanup;
+	}
+	/* We need to manually truncate a potentially already existent
+	output file */
+	if (ftruncate(fd, 0) < 0)
+		goto cleanup;
+	return (fd);
+
+cleanup:
+	errno_backup = errno;
+	close(fd);
+	errno = errno_backup;
+	return (-1);
+}
+
+void	init_payload_header(payload_header_t *payload_header, mapped_file_t *target)
+{
+	if (!payload_header || !target)
+		return;
+
+	ft_memcpy(payload_header->magic, "WOODY", sizeof("WOODY"));
+	payload_header->compressed_size	= (size_t)target->st.st_size;
+	payload_header->decompressed_size = (size_t)target->st.st_size;
+	payload_header->offset = sizeof(payload_header_t);
+}
+
 /*
    "packer": represents this program/file
    "target": represents the input ELF that will be packed
@@ -653,65 +805,44 @@ error_t	fill_output_elf(int					output_fd,
 */
 int main(int argc, char *argv[])
 {
-	int					target_fd = -1;
-	int					packer_fd = -1;
+	mapped_file_t 		target = {.data = MAP_FAILED};
+	mapped_file_t 		packer = {.data = MAP_FAILED};
 	int					output_fd = -1;
-	int					status = 1;
-	payload_header_t	encrypt_header = {0};
-	void				*target_file_data = MAP_FAILED;
-	void				*packer_file_data = MAP_FAILED;
-	struct stat			target_st;
-	struct stat			packer_st;
+	payload_header_t	payload_header = {0};
 	elf_layout_t		output_layout = {0};
 	Elf64_Shdr			*packer_stub_section;
 	error_t				error;
+	int					status = 1;
 
 	if (argc < 2)
 		return (fprintf(stderr, "Specify a filename\n"), 1);
 
-	/* OPEN FILE */
-	target_fd = open(argv[1], O_RDONLY);
-	if (target_fd < 0) {
-		perror("Error: open()");
-		goto cleanup;
-	}
-
-	if (fstat(target_fd, &target_st) < 0) {
-		perror("Error: fstat()");
-		goto cleanup;
-	}
-
-	target_file_data = mmap(NULL, target_st.st_size, PROT_READ, MAP_PRIVATE, target_fd, 0);
-	if (target_file_data == MAP_FAILED) {
-		perror("Error: mmap()");
-		goto cleanup;
-	}
-
-	error = check_elf_validity(target_file_data, target_st);
+	error = map_file(argv[1], &target);
 	if (error != ok) {
 		print_error(error);
 		goto cleanup;
 	}
 
-	/* OPEN OURSELVES */
-	packer_fd = open(argv[0], O_RDONLY);
-	if (packer_fd < 0) {
-		perror("Error: open()");
+	/* CREATE OUTPUT ELF */
+	output_fd = create_output_file("woody", &target.st);
+	if (output_fd < 0) {
+		perror("Error: create_output_file()");
 		goto cleanup;
 	}
 
-	if (fstat(packer_fd, &packer_st) < 0) {
-		perror("Error: fstat()");
+	error = check_elf_validity(&target);
+	if (error != ok) {
+		print_error(error);
 		goto cleanup;
 	}
 
-	packer_file_data = mmap(NULL, packer_st.st_size, PROT_READ, MAP_PRIVATE, packer_fd, 0);
-	if (packer_file_data == MAP_FAILED) {
-		perror("Error: mmap()");
+	error = map_file("/proc/self/exe", &packer);
+	if (error != ok) {
+		print_error(error);
 		goto cleanup;
 	}
 
-	packer_stub_section = find_section(packer_file_data, ".stub");
+	packer_stub_section = find_packer_section(&packer, ".stub");
 	if (packer_stub_section == NULL) {
 		fprintf(stderr, "Error: .stub.text section not found\n");
 		goto cleanup;
@@ -719,8 +850,7 @@ int main(int argc, char *argv[])
 
 	error = init_output_headers(
 				&output_layout,
-				target_file_data,
-				target_st.st_size,
+				&target,
 				packer_stub_section
 			);
 	if (error != ok) {
@@ -728,27 +858,17 @@ int main(int argc, char *argv[])
 		goto cleanup;
 	}
 
-	ft_memcpy(encrypt_header.magic, "WOODY", sizeof("WOODY"));
-	encrypt_header.compressed_size	= target_st.st_size;
-	encrypt_header.decompressed_size = target_st.st_size;
-	encrypt_header.offset = sizeof(payload_header_t);
+	init_payload_header(&payload_header, &target);
 
 	// print_output_layout(&output_layout);
-
-	/* CREATE OUTPUT ELF */
-	output_fd = open("woody", O_CREAT | O_WRONLY | O_TRUNC, 0755);
-	if (output_fd < 0) {
-		perror("Error: open()");
-		goto cleanup;
-	}
 
 	error = fill_output_elf(
 				output_fd,
 				&output_layout,
 				packer_stub_section,
-				packer_file_data,
-				target_file_data,
-				&encrypt_header
+				packer.data,
+				target.data,
+				&payload_header
 			);
 	if (error != ok) {
 		print_error(error);
@@ -765,14 +885,10 @@ cleanup:
 		perror("Error: close()");
 		status = 1;
 	}
-	if (packer_file_data != MAP_FAILED)
-		munmap(packer_file_data, packer_st.st_size);
-	if (packer_fd >= 0)
-		close(packer_fd);
-	if (target_file_data != MAP_FAILED)
-		munmap(target_file_data, target_st.st_size);
-	if (target_fd >= 0)
-		close(target_fd);
+	if (target.data != MAP_FAILED && munmap(target.data, target.st.st_size) < 0)
+		perror("Error: unmapping file");
+	if (packer.data != MAP_FAILED && munmap(packer.data, packer.st.st_size) < 0)
+		perror("Error: unmapping file");
 	if (status == 0)
 		printf("ELF successuflly packed!\n");
 
