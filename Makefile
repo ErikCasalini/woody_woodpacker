@@ -12,7 +12,7 @@ STUB_LDFLAGS := -static --no-dynamic-linker -T $(LINKER_SCRIPT)
 
 PACKER_OBJ_DIR := packer_bin
 PACKER := packer
-PACKER_CFLAGS := -Wall -Werror -Wextra -g
+PACKER_CFLAGS := -Wall -Werror -Wextra -g -MMD
 # PACKER_ASFLAGS := -Wa,--fatal-warnings
 # PACKER_LDFLAGS := -Wl,-Ttext-segment=0x10000
 

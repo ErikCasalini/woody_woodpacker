@@ -6,6 +6,7 @@
 #include <sys/stat.h>
 #include "syscalls/syscalls.h"
 #include "../ft/libft.h"
+#include "../common/payload.h"
 #include "jump_to_with_stack.h"
 
 #define STDIN 0
@@ -20,22 +21,13 @@ typedef enum str_code_e
 	ok,
 	bad_stack,
 	bad_auxv,
-	blob_not_found,
+	payload_not_found,
 	bad_e_type,
 	corrupted,
 	bad_load,
 	bad_interp,
 	start_msg
 } str_code_t;
-
-typedef struct b_header_s
-{
-	unsigned char	magic[8];
-	Elf64_Xword		compressed_size;
-	Elf64_Xword		decompressed_size;
-	Elf64_Off		offset;				/* From the beginning of this segment */
-	Elf64_Xword		key;
-} b_header_t;
 
 typedef struct mapping_range_s
 {
@@ -65,7 +57,7 @@ static const char	strings[][STRINGS_LEN] = {
     "+------------------------------------------------+\n",
 	[bad_stack] = "execute_packed_elf : illformed stack\n",
 	[bad_auxv] = "find_auxv_field : invalid auxv\n",
-	[blob_not_found] = "find_elf_blob : original elf not found or currupted\n",
+	[payload_not_found] = "find_elf_payload_header : original elf not found or currupted\n",
 	[bad_e_type] = "execute_packed_elf : unsupported ELF type\n",
 	[corrupted] = "decrypt_in_place : original elf corrupted\n",
 	[bad_load] = "load_elf : error during mapping original elf\n",
@@ -111,7 +103,7 @@ static void	*map_segment(Elf64_Phdr segment, const elf_info_t *elf, uint64_t pag
 	uintptr_t		data_end;		/* Address right after the segment's file data, where BSS begins if present */
 	uintptr_t		memory_end;		/* End of the segment, including BSS, rounded up to a page boundary */
 	mapping_range_t	data_pages;		/* Runtime page range, that will be filled with file data */
-	Elf64_Off		file_offset;	/* File offset corresponding to data_pages.start */
+	Elf64_Off		file_off;		/* File offset corresponding to data_pages.start */
 	size_t			copy_size;		/* Bytes to copy from the file, limited by the file's size */
 
 	if (!elf || !elf->file_header)
@@ -141,17 +133,17 @@ static void	*map_segment(Elf64_Phdr segment, const elf_info_t *elf, uint64_t pag
 
 	data_end = segment_addr + segment.p_filesz;
 	data_pages.end = round_to_page_up(data_end, page_size);
-	file_offset = segment.p_offset - (segment_addr - data_pages.start);
-	if (file_offset >= elf->file_data_sz)
+	file_off = segment.p_offset - (segment_addr - data_pages.start);
+	if (file_off >= elf->file_data_sz)
 		return (NULL);
 
 	/* We copy all the corresponding file content. If file
 	is too small, we zero the remaining bytes of the page */
 	copy_size = data_pages.end - data_pages.start;
-	if (copy_size > elf->file_data_sz - file_offset)
-		copy_size = elf->file_data_sz - file_offset;
+	if (copy_size > elf->file_data_sz - file_off)
+		copy_size = elf->file_data_sz - file_off;
 	memcpy((void*)data_pages.start,
-		(unsigned char*)elf->file_header + file_offset, copy_size);
+		(unsigned char*)elf->file_header + file_off, copy_size);
 	memset((void*)(data_pages.start + copy_size), 0,
 		data_pages.end - data_pages.start - copy_size);
 
@@ -404,17 +396,18 @@ static int	map_ET_DYN(elf_info_t *elf, uint64_t page_size)
 }
 
 /* No encryption for now */
-static Elf64_Ehdr	*decrypt_blob(b_header_t *b_header)
+static Elf64_Ehdr	*decrypt_payload(payload_header_t *payload_header)
 {
-	return ((Elf64_Ehdr*)((unsigned char*)b_header + b_header->offset));
+	return ((Elf64_Ehdr*)((unsigned char*)payload_header + payload_header->offset));
 }
 
 /* The stub assumes that the original ELF is encrypted/compressed
  in the last PT_LOAD. At its first offset, there must be a
- blob header containing its metadata. */
-static b_header_t	*find_elf_blob_header(const elf_info_t *this)
+ payload header containing its metadata. */
+static payload_header_t	*find_elf_payload_header(const elf_info_t *this)
 {
-	b_header_t *blob;
+	static const unsigned char	magic[] = PAYLOAD_MAGIC;
+	payload_header_t	*payload_header;
 	Elf64_Half	phnum;
 
 	if (!this || !this->mem_phdr)
@@ -425,17 +418,14 @@ static b_header_t	*find_elf_blob_header(const elf_info_t *this)
 		phnum--;
 	if (phnum == 0)
 		return (NULL);
-	blob = (b_header_t*)((unsigned char*)this->mem_phdr[phnum - 1].p_vaddr + this->load_bias);
+	payload_header = (payload_header_t*)((unsigned char*)this->mem_phdr[phnum - 1].p_vaddr + this->load_bias);
 
-	if (blob->magic[0] != 'W' ||
-		blob->magic[1] != 'O' ||
-		blob->magic[2] != 'O' ||
-		blob->magic[3] != 'D' ||
-		blob->magic[4] != 'Y' ||
-		blob->magic[5] != '\0')
-		return (NULL);
+	for (size_t i = 0; i < sizeof(magic); i++) {
+		if (payload_header->magic[i] != magic[i])
+			return (NULL);
+	}
 
-	return (blob);
+	return (payload_header);
 }
 
 static int	find_interpreter(char *interp_name, elf_info_t *elf)
@@ -589,16 +579,16 @@ static str_code_t	init_this_elf_struct(elf_info_t *this, Elf64_auxv_t *auxv)
 
 _Noreturn void	execute_packed_elf(uintptr_t *stack)
 {
-	elf_info_t		this = {0};						/* refers to THIS running elf, the binary resulting of a packing, which entry is this stub. */
-	elf_info_t		elf = {0};						/* refers to the ORIGINAL elf encrypted inside THIS binary in a "blob" format. */
-	elf_info_t		interp = {0};					/* refers to the interpreter of the ORIGINAL elf */
-	Elf64_auxv_t	*auxv;							/* Will contain the begin of the auxv table */
-	b_header_t		*blob_header;					/* Will contain the address of the ORIGINAL elf blob header */
-	char			interp_name[PATH_MAX] = {0};	/* Will contain the string of the ORIGINAL elf interpreter's name */
-	void			*entry = NULL;					/* Will contain the entry address of the ORIGINAL elf or its interpreter's */
-	uint64_t		page_size;						/* Will contain the page size for this execution */
-	int				retval;
-	Elf64_auxv_t	*auxv_field;
+	elf_info_t			this = {0};						/* refers to THIS running elf, the binary resulting of a packing, which entry is this stub. */
+	elf_info_t			elf = {0};						/* refers to the ORIGINAL elf encrypted inside THIS binary as a payload. */
+	elf_info_t			interp = {0};					/* refers to the interpreter of the ORIGINAL elf */
+	Elf64_auxv_t		*auxv;							/* Will contain the begin of the auxv table */
+	payload_header_t	*payload_header;				/* Will contain the address of the ORIGINAL elf payload header */
+	char				interp_name[PATH_MAX] = {0};	/* Will contain the string of the ORIGINAL elf interpreter's name */
+	void				*entry = NULL;					/* Will contain the entry address of the ORIGINAL elf or its interpreter's */
+	uint64_t			page_size;						/* Will contain the page size for this execution */
+	int					retval;
+	Elf64_auxv_t		*auxv_field;
 
 	sys_write(STDOUT, strings[start_msg], sizeof(strings[start_msg]));
 
@@ -622,18 +612,18 @@ _Noreturn void	execute_packed_elf(uintptr_t *stack)
 		sys_exit(EXIT_FAILURE);
 	}
 
-	blob_header = find_elf_blob_header(&this);
-	if (blob_header == NULL) {
-		print_error(blob_not_found);
+	payload_header = find_elf_payload_header(&this);
+	if (payload_header == NULL) {
+		print_error(payload_not_found);
 		sys_exit(EXIT_FAILURE);
 	}
 
-	elf.file_header = decrypt_blob(blob_header); // a faire
+	elf.file_header = decrypt_payload(payload_header); // a faire
 	if (elf.file_header == NULL) {
 		print_error(corrupted);
 		sys_exit(EXIT_FAILURE);
 	}
-	elf.file_data_sz = blob_header->decompressed_size;
+	elf.file_data_sz = payload_header->decompressed_size;
 	elf.file_phdr = (Elf64_Phdr *)((unsigned char*)elf.file_header +
 					elf.file_header->e_phoff);
 
@@ -674,7 +664,7 @@ _Noreturn void	execute_packed_elf(uintptr_t *stack)
 	}
 
 	sys_munmap(interp.file_header, interp.file_data_sz);
-	// sys_munmap(blob_header, blob_header->decompressed_size); Si on veut free il faut calculer la base de la page et sa fin
+	// sys_munmap(payload_header, payload_header->decompressed_size); Si on veut free il faut calculer la base de la page et sa fin
 
 	/* We jump to the loaded interepreter or directly to the decrypted elf entry */
 	jump_to_with_stack(entry, stack);

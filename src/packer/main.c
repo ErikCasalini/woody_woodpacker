@@ -9,6 +9,7 @@
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include "../ft/libft.h"
+#include "../common/payload.h"
 
 #ifndef LOWEST_VADDR
 # define LOWEST_VADDR 0x10000
@@ -17,15 +18,6 @@
 #ifndef HIGHEST_VADDR
 # define HIGHEST_VADDR 0x00007fffffffefff
 #endif
-
-typedef struct payload_header_s
-{
-	unsigned char	magic[8];
-	Elf64_Xword		compressed_size;
-	Elf64_Xword		decompressed_size;
-	Elf64_Off		offset;				/* From the beginning of this segment */
-	Elf64_Xword		key;
-} payload_header_t;
 
 typedef struct mapping_range_s
 {
@@ -122,7 +114,7 @@ void	print_error(error_t error)
 			fprintf(stderr, "Error: invalid section header table offset\n");
 			break;
 		case no_stub_section:
-			fprintf(stderr, "Error: stub section not found\n");
+			fprintf(stderr, "Error: .stub section not found\n");
 			break;
 		case no_phdr:
 			fprintf(stderr, "Error: ELF program header table is missing\n");
@@ -235,22 +227,22 @@ error_t check_header(mapped_file_t *file)
 	return (ok);
 }
 
-int	check_interp_name(Elf64_Ehdr *header, Elf64_Phdr *pt_interp)
+error_t	check_interp_name(Elf64_Ehdr *header, Elf64_Phdr *pt_interp)
 {
 	char *interp_name;
 
 	if (!header || !pt_interp)
-		return (-1);
+		return (bad_interp_name);
 
 	if (pt_interp->p_filesz <= 1)
-		return (-1);
+		return (bad_interp_name);
 
 	interp_name = (char*)((unsigned char*)header + pt_interp->p_offset);
 
 	if (interp_name[pt_interp->p_filesz - 1] != '\0')
-		return (-1);
+		return (bad_interp_name);
 
-	return (0);
+	return (ok);
 }
 
 error_t	check_phdr(mapped_file_t *file)
@@ -330,8 +322,8 @@ error_t	check_phdr(mapped_file_t *file)
 	if (!pt_load_num)
 		return (no_ptload);
 
-	if (pt_interp && check_interp_name(header, pt_interp) < 0)
-				return (bad_interp_name);
+	if (pt_interp)
+		return (check_interp_name(header, pt_interp));
 
 	return (ok);
 }
@@ -344,15 +336,15 @@ error_t	check_elf_validity(mapped_file_t *file)
 		return (unexpected_error);
 
 	error = check_file_metadata(file->st);
-	if (error)
+	if (error != ok)
 		return (error);
 
 	error = check_header(file);
-	if (error)
+	if (error != ok)
 		return (error);
 
 	error = check_phdr(file);
-	if (error)
+	if (error != ok)
 		return (error);
 
 	return (ok);
@@ -513,14 +505,14 @@ void	init_phdrs_segment(Elf64_Phdr *phdrs_segment, Elf64_Off file_off, intptr_t 
 	phdrs_segment->p_align = 0x1000;
 }
 
-void	init_stub_segment(Elf64_Phdr *stub_segment, Elf64_Shdr *packer_stub_section, Elf64_Off file_offset, intptr_t vaddr)
+void	init_stub_segment(Elf64_Phdr *stub_segment, Elf64_Shdr *packer_stub_section, Elf64_Off file_off, intptr_t vaddr)
 {
 	if (!stub_segment)
 		return;
 
 	stub_segment->p_type = PT_LOAD;
 	stub_segment->p_flags = PF_R | PF_X;
-	stub_segment->p_offset = file_offset;
+	stub_segment->p_offset = file_off;
 	stub_segment->p_vaddr = vaddr;
 	stub_segment->p_paddr = vaddr;
 	stub_segment->p_filesz = packer_stub_section->sh_size;
@@ -528,7 +520,7 @@ void	init_stub_segment(Elf64_Phdr *stub_segment, Elf64_Shdr *packer_stub_section
 	stub_segment->p_align = 0x1000;
 }
 
-error_t	init_payload_segment(Elf64_Phdr *payload_segment, size_t target_size, Elf64_Off file_offset, uintptr_t vaddr, uint64_t alignment)
+error_t	init_payload_segment(Elf64_Phdr *payload_segment, size_t target_size, Elf64_Off file_off, uintptr_t vaddr, uint64_t alignment)
 {
 	size_t		payload_size;
 	uintptr_t	payload_end;
@@ -536,22 +528,21 @@ error_t	init_payload_segment(Elf64_Phdr *payload_segment, size_t target_size, El
 	if (!payload_segment || alignment == 0)
 		return (unexpected_error);
 
-	/* Ensure adding the payload header to the file size cannot overflow. */
+	/* Ensure adding the payload header to the file size cannot overflow */
 	if (target_size > SIZE_MAX - sizeof(payload_header_t))
 		return (segment_overflow);
 	payload_size = sizeof(payload_header_t) + target_size;
-
-	/* Ensure the payload end address cannot overflow. */
+	/* Ensure the payload end address cannot overflow */
 	if (payload_size > UINTPTR_MAX - vaddr)
 		return (segment_overflow);
 	payload_end = vaddr + payload_size;
-	/* Ensure rounding the payload end up to alignment cannot overflow. */
+	/* Ensure rounding the payload end up to alignment cannot overflow */
 	if (payload_end > UINTPTR_MAX - (alignment - 1))
 		return (segment_overflow);
 
 	payload_segment->p_type = PT_LOAD;
 	payload_segment->p_flags = PF_R | PF_W;
-	payload_segment->p_offset = file_offset;
+	payload_segment->p_offset = file_off;
 	payload_segment->p_vaddr = vaddr;
 	payload_segment->p_paddr = vaddr;
 	payload_segment->p_filesz = payload_size;
@@ -700,7 +691,7 @@ error_t	fill_output_elf(int					output_fd,
 						Elf64_Shdr			*packer_stub_section,
 						Elf64_Ehdr			*packer_file_data,
 						Elf64_Ehdr			*target_file_data,
-						payload_header_t	*encrypt_header)
+						payload_header_t	*payload_header)
 {
 	void	*start_stub_section;
 	ssize_t	written;
@@ -731,12 +722,12 @@ error_t	fill_output_elf(int					output_fd,
 	if (written != (ssize_t)packer_stub_section->sh_size)
 		return (write_error);
 
-	written = write(output_fd, encrypt_header, sizeof(payload_header_t));
+	written = write(output_fd, payload_header, sizeof(payload_header_t));
 	if (written != (ssize_t)sizeof(payload_header_t))
 		return (write_error);
 
-	written = write(output_fd, target_file_data, encrypt_header->decompressed_size);
-	if (written != (ssize_t)encrypt_header->decompressed_size)
+	written = write(output_fd, target_file_data, payload_header->decompressed_size);
+	if (written != (ssize_t)payload_header->decompressed_size)
 		return (write_error);
 
 	return (ok);
@@ -791,7 +782,7 @@ static int	create_output_file(const char *path, const struct stat *target_st)
 	int			errno_backup;
 	struct stat	output_st;
 	/* We avoid O_TRUNC in case target and output are
-	same file */
+	the same file */
 	fd = open(path, O_CREAT | O_WRONLY, 0755);
 	if (fd < 0)
 		return (-1);
@@ -822,7 +813,7 @@ void	init_payload_header(payload_header_t *payload_header, mapped_file_t *target
 	if (!payload_header || !target)
 		return;
 
-	ft_memcpy(payload_header->magic, "WOODY", sizeof("WOODY"));
+	ft_memcpy(payload_header->magic, PAYLOAD_MAGIC, sizeof(PAYLOAD_MAGIC));
 	payload_header->compressed_size	= (size_t)target->st.st_size;
 	payload_header->decompressed_size = (size_t)target->st.st_size;
 	payload_header->offset = sizeof(payload_header_t);
@@ -857,13 +848,6 @@ int main(int argc, char *argv[])
 		goto cleanup;
 	}
 
-	/* CREATE OUTPUT ELF */
-	output_fd = create_output_file("woody", &target.st);
-	if (output_fd < 0) {
-		perror("Error: create_output_file()");
-		goto cleanup;
-	}
-
 	error = check_elf_validity(&target);
 	if (error != ok) {
 		print_error(error);
@@ -878,7 +862,7 @@ int main(int argc, char *argv[])
 
 	packer_stub_section = find_packer_section(&packer, ".stub");
 	if (packer_stub_section == NULL) {
-		fprintf(stderr, "Error: .stub.text section not found\n");
+		print_error(no_stub_section);
 		goto cleanup;
 	}
 
@@ -895,6 +879,12 @@ int main(int argc, char *argv[])
 	init_payload_header(&payload_header, &target);
 
 	// print_output_layout(&output_layout);
+
+	output_fd = create_output_file("woody", &target.st);
+	if (output_fd < 0) {
+		perror("Error: create_output_file()");
+		goto cleanup;
+	}
 
 	error = fill_output_elf(
 				output_fd,

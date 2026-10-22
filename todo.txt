@@ -102,7 +102,7 @@ packer checks :
 -------------------MEMORY-------------------
     PT_LOAD header + PHDR		PF_R		<-----+
     PT_LOAD stub code + rodata	PF_R | PF_X		  |
-	PT_LOAD blob				PF_R | PF_W	  	  |
+	PT_LOAD payload				PF_R | PF_W	  	  |
 												  |
 -------------------FILE--------------------		  |
 offset 0										  |
@@ -111,10 +111,10 @@ offset 0										  |
 ---padding---
 [stub code + rodata]
 ---padding---
-[blob header]
-[encrypted blob]
+[payload header]
+[encrypted payload]
 
-----------------BLOB HEADER----------------
+----------------PAYLOAD HEADER----------------
 magic:				"WOODY\0"
 offset:				xxx
 compressed size:	xxx
