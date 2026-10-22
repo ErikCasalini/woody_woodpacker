@@ -64,7 +64,9 @@ typedef enum error_e
 	bad_shoff,
 	no_stub_section,
 	no_phdr,
+	no_ptload,
 	bad_phdr,
+	segment_overflow,
 	bad_pt_load_order,
 	bad_pt_load_align,
 	bad_p_align,
@@ -125,8 +127,14 @@ void	print_error(error_t error)
 		case no_phdr:
 			fprintf(stderr, "Error: ELF program header table is missing\n");
 			break;
+		case no_ptload:
+			fprintf(stderr, "Error: ELF has no PT_LOADs\n");
+			break;
 		case bad_phdr:
 			fprintf(stderr, "Error: invalid ELF program header\n");
+			break;
+		case segment_overflow:
+			fprintf(stderr, "Error: segment size or address overflows during payload layout\n");
 			break;
 		case bad_pt_load_order:
 			fprintf(stderr, "Error: PT_LOAD segments are not ordered by virtual address\n");
@@ -255,6 +263,7 @@ error_t	check_phdr(mapped_file_t *file)
 	uintptr_t	prev_vaddr = 0;
 	uintptr_t	segment_end;
 	int64_t		page_size;
+	int			pt_load_num = 0;
 
 	if (!file || file->data == MAP_FAILED)
 		return (unexpected_error);
@@ -290,6 +299,7 @@ error_t	check_phdr(mapped_file_t *file)
 
 		if (phdrs[i].p_type != PT_LOAD)
 			continue;
+		pt_load_num++;
 
 		if (phdrs[i].p_filesz > phdrs[i].p_memsz)
 			return (bad_phdr);
@@ -316,6 +326,9 @@ error_t	check_phdr(mapped_file_t *file)
 		)
 			return (bad_pt_load_align);
 	}
+
+	if (!pt_load_num)
+		return (no_ptload);
 
 	if (pt_interp && check_interp_name(header, pt_interp) < 0)
 				return (bad_interp_name);
@@ -425,23 +438,25 @@ intptr_t	select_output_base_addr(Elf64_Ehdr *target_file_data, size_t output_mem
 	mapping_range_t	target_load_range;
 
 	if (!target_file_data || target_file_data->e_type == ET_DYN)
-		return (0x0);
+		return (0);
 
 	/* If original ELF is ET_EXEC, we must chose absolute addresses
 	that will not collide with any of its PT_LOAD. Thus we calculate
 	the load range of the entire ELF, and we place the stub PT_LOADs
-	rigth after or right before, depending of available addresses */
+	rigth before or right after it, depending of available addresses */
 	target_phdrs = (Elf64_Phdr*)((unsigned char*)target_file_data + target_file_data->e_phoff);
 	target_load_range = get_mapping_range(target_phdrs, target_file_data->e_phnum, page_size);
 
 	/* We assume that the lowest possible vaddr for a process is 0x10000
 	and the highest is 0x00007fffffffefff (47 bits) */
-	if ((LOWEST_VADDR + output_memsz) < target_load_range.start)
+	if (target_load_range.start > LOWEST_VADDR
+		&& output_memsz < target_load_range.start - LOWEST_VADDR)
 		return ((intptr_t)round_to_page_down(
 					target_load_range.start - output_memsz,
 					page_size
 				));
-	if ((HIGHEST_VADDR - output_memsz) > target_load_range.end)
+	if (target_load_range.end < HIGHEST_VADDR
+		&& output_memsz < HIGHEST_VADDR - target_load_range.end)
 		return (target_load_range.end);
 
 	return (-1);
@@ -513,10 +528,26 @@ void	init_stub_segment(Elf64_Phdr *stub_segment, Elf64_Shdr *packer_stub_section
 	stub_segment->p_align = 0x1000;
 }
 
-void	init_payload_segment(Elf64_Phdr *payload_segment, size_t payload_size, Elf64_Off file_offset, intptr_t vaddr)
+error_t	init_payload_segment(Elf64_Phdr *payload_segment, size_t target_size, Elf64_Off file_offset, uintptr_t vaddr, uint64_t alignment)
 {
-	if (!payload_segment)
-		return;
+	size_t		payload_size;
+	uintptr_t	payload_end;
+
+	if (!payload_segment || alignment == 0)
+		return (unexpected_error);
+
+	/* Ensure adding the payload header to the file size cannot overflow. */
+	if (target_size > SIZE_MAX - sizeof(payload_header_t))
+		return (segment_overflow);
+	payload_size = sizeof(payload_header_t) + target_size;
+
+	/* Ensure the payload end address cannot overflow. */
+	if (payload_size > UINTPTR_MAX - vaddr)
+		return (segment_overflow);
+	payload_end = vaddr + payload_size;
+	/* Ensure rounding the payload end up to alignment cannot overflow. */
+	if (payload_end > UINTPTR_MAX - (alignment - 1))
+		return (segment_overflow);
 
 	payload_segment->p_type = PT_LOAD;
 	payload_segment->p_flags = PF_R | PF_W;
@@ -526,6 +557,8 @@ void	init_payload_segment(Elf64_Phdr *payload_segment, size_t payload_size, Elf6
 	payload_segment->p_filesz = payload_size;
 	payload_segment->p_memsz = payload_size;
 	payload_segment->p_align = 0x1000;
+
+	return (ok);
 }
 
 /* We assume that ELF validity check has already been ensured */
@@ -553,10 +586,6 @@ void	init_gnu_stack_segment(Elf64_Phdr *gnu_stack_segment, Elf64_Ehdr *target_fi
 	}
 }
 
-/* We assume that the beginning of both sections is alligned
-on a virtual memory address. This inply that no extra memory
-padding will be needed, and the in-memory layout of those sections
-will be the same as their in-file layout */
 error_t	init_output_headers(elf_layout_t *output, mapped_file_t *target, Elf64_Shdr *packer_stub_section)
 {
 	off_t			file_off;
@@ -565,6 +594,7 @@ error_t	init_output_headers(elf_layout_t *output, mapped_file_t *target, Elf64_S
 	intptr_t		base_addr;
 	int64_t			alignment;
 	size_t			output_memsz;
+	error_t			error;
 
 	if (!output || !target || !target->data || !packer_stub_section)
 		return (unexpected_error);
@@ -587,11 +617,15 @@ error_t	init_output_headers(elf_layout_t *output, mapped_file_t *target, Elf64_S
 	prev_mem_end = output->stub_segment.p_vaddr + output->stub_segment.p_memsz;
 	file_off = output->stub_segment.p_offset + output->stub_segment.p_filesz;
 	vaddr = round_to_page_up(prev_mem_end, alignment) + (file_off % alignment);
-	init_payload_segment(&output->payload_segment, sizeof(payload_header_t) + target->st.st_size, file_off, vaddr);
+	error = init_payload_segment(&output->payload_segment,
+		(size_t)target->st.st_size, file_off, vaddr, alignment);
+	if (error != ok)
+		return (error);
 
 	init_gnu_stack_segment(&output->gnu_stack_segment, target->data);
 
-	/* We calculate the total page space that our output ELF will require */
+	/* We calculate the total page space that our output ELF will require
+	(before the payload execution) */
 	output_memsz = (size_t)round_to_page_up(
 								output->payload_segment.p_vaddr +
 								output->payload_segment.p_memsz,
