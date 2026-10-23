@@ -112,11 +112,9 @@ static uintptr_t find_phdr_addr(const elf_info_t *elf)
 {
 	Elf64_Phdr		*segment;
 	Elf64_Off		phdr_off;
-	Elf64_Xword		phdr_size;
 	Elf64_Off		offset;
 
 	phdr_off = elf->file_header->e_phoff;
-	phdr_size = elf->file_header->e_phnum * elf->file_header->e_phentsize;
 
 	for (Elf64_Half i = 0; i < elf->file_header->e_phnum; i++) {
 		segment = &elf->file_phdr[i];
