@@ -13,17 +13,21 @@ STUB_LDFLAGS := -static --no-dynamic-linker -T $(LINKER_SCRIPT)
 PACKER_OBJ_DIR := packer_bin
 PACKER := packer
 PACKER_CFLAGS := -Wall -Werror -Wextra -g -MMD
-# PACKER_ASFLAGS := -Wa,--fatal-warnings
-# PACKER_LDFLAGS := -Wl,-Ttext-segment=0x10000
 
 PACKED_FILE := woody
 
-COMMON_SRC := src/ft/ft_memcpy.c \
+COMMON_SRC := src/common/elf_range.c \
+			  src/ft/ft_memcpy.c \
 			  src/ft/ft_memmove.c \
 			  src/ft/ft_memset.c \
 			  src/ft/ft_strlen.c
 
 STUB_SRC := src/stub/execute_packed_elf.c \
+			src/stub/auxv.c \
+			src/stub/interpreter.c \
+			src/stub/loader.c \
+			src/stub/messages.c \
+			src/stub/payload.c \
 			src/stub/entry.s \
 			src/stub/jump_to_with_stack.s \
 			src/stub/syscalls/sys_close.s \
@@ -37,6 +41,13 @@ STUB_SRC := src/stub/execute_packed_elf.c \
 			src/stub/syscalls/sys_write.s
 
 PACKER_SRC := src/packer/main.c \
+			  src/packer/debug.c \
+			  src/packer/error.c \
+			  src/packer/file.c \
+			  src/packer/layout.c \
+			  src/packer/output.c \
+			  src/packer/stub_section.c \
+			  src/packer/validate.c \
 			  src/ft/ft_strncmp.c
 
 STUB_ALL_SRC := $(STUB_SRC) $(COMMON_SRC)
@@ -54,6 +65,9 @@ PACKER_DEPS := $(PACKER_OBJ:.o=.d)
 
 all: $(PACKER)
 
+debug:
+	$(MAKE) -B $(PACKER) PACKER_CFLAGS="$(PACKER_CFLAGS) -DDEBUG"
+	
 stub: $(STUB)
 
 $(STUB): $(STUB_OBJ) $(LINKER_SCRIPT)
@@ -99,4 +113,7 @@ re:
 	$(MAKE) fclean
 	$(MAKE) all
 
-.PHONY: all stub clean fclean re
+test: $(PACKER)
+	python3 tests/test_packer.py "$(abspath $(PACKER))"
+
+.PHONY: all debug stub clean fclean re test

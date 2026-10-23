@@ -1,10 +1,14 @@
+/* We put together ".text.stub_entry" section, all ".text.*"
+and ".rodata.*" sections (in this precise order), into an
+unique ".stub" section. */
+
 SECTIONS
 {
   .stub :
   {
 	*(.text.stub_entry)
-	*(.text)
-	*(.rodata)
+	*(.text .text.*)
+	*(.rodata .rodata.*)
   }
   /DISCARD/ : { *(*) }
 }
