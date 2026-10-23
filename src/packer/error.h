@@ -19,6 +19,7 @@ typedef enum error_e
 	no_phdr,
 	no_ptload,
 	bad_phdr,
+	bad_entry,
 	segment_overflow,
 	bad_pt_load_order,
 	bad_pt_load_align,

@@ -89,6 +89,7 @@ static error_t	check_phdr(const mapped_file_t *file, uint64_t page_size)
 	uintptr_t	prev_vaddr = 0;
 	uintptr_t	segment_end;
 	int			pt_load_num = 0;
+	int			valid_entry = 0;
 
 	if (!file || file->data == MAP_FAILED)
 		return (unexpected_error);
@@ -146,10 +147,18 @@ static error_t	check_phdr(const mapped_file_t *file, uint64_t page_size)
 			(phdrs[i].p_vaddr % phdrs[i].p_align) != (phdrs[i].p_offset % phdrs[i].p_align)
 		)
 			return (bad_pt_load_align);
+
+		if ((phdrs[i].p_flags & PF_X)
+			&& header->e_entry >= phdrs[i].p_vaddr
+			&& header->e_entry < segment_end
+		)
+			valid_entry = 1;
 	}
 
 	if (!pt_load_num)
 		return (no_ptload);
+	if (!valid_entry)
+		return (bad_entry);
 
 	if (pt_interp)
 		return (check_interp_name(header, pt_interp));

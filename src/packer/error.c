@@ -52,6 +52,9 @@ void	print_error(error_t error)
 		case bad_phdr:
 			fprintf(stderr, "Error: invalid ELF program header\n");
 			break;
+		case bad_entry:
+			fprintf(stderr, "Error: ELF entry point is not within an executable PT_LOAD segment\n");
+			break;
 		case segment_overflow:
 			fprintf(stderr, "Error: segment size or address overflows during payload layout\n");
 			break;

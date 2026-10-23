@@ -11,7 +11,7 @@ typedef struct elf_info_s
 	uint64_t	file_data_sz;	/* Full size of elf file representation */
 	Elf64_Phdr	*file_phdr;		/* Address of the beginning of phdr inside elf file representation */
 	Elf64_Phdr	*mem_phdr;		/* Address of the beginning of phdr inside a loaded segment (if any) */
-	void		*aslr_addr;		/* Random address for ET_DYN loading. For ET_EXEC this is NULL */
+	void		*base_addr;		/* Runtime address of the first page of the range covering all PT_LOAD segments */
 	uint64_t	load_bias;		/* Offset added to ELF virtual addresses to obtain runtime addresses */
 } elf_info_t;
 

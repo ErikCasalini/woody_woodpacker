@@ -6,7 +6,7 @@
 #include "../ft/libft.h"
 #include "syscalls/syscalls.h"
 
-/* Copies a segment into the reserved writable memory and initializes its BSS. */
+/* Copies a segment into the reserved writable memory and initializes its BSS */
 static void	*map_segment(Elf64_Phdr segment, const elf_info_t *elf, uint64_t page_size, int mmap_flag)
 {
 	uintptr_t		segment_addr;	/* Runtime address of the segment's first byte */
@@ -67,7 +67,7 @@ static void	*map_segment(Elf64_Phdr segment, const elf_info_t *elf, uint64_t pag
 
 /* Apply permissions after all segments have been copied.
 For shared pages, the last PT_LOAD in program header order determines
-the final permissions. */
+the final permissions */
 static int	apply_permissions(const elf_info_t *elf, uint64_t page_size)
 {
 	Elf64_Phdr		*segment;
@@ -179,7 +179,7 @@ int	map_ET_EXEC(elf_info_t *elf, uint64_t page_size)
 		) < 0)
 		return (-1);
 
-	elf->aslr_addr = NULL;
+	elf->base_addr = (void*)range.start;
 	elf->load_bias = 0;
 
 	if (sys_munmap((void*)range.start, range.end - range.start) < 0)
@@ -202,6 +202,13 @@ static Elf64_Xword	determine_global_alignement(Elf64_Phdr *phdr, Elf64_Half phnu
 	}
 
 	return (alignment);
+}
+
+static inline int reservation_size_overflows(mapping_range_t range, size_t alignment)
+{
+	if (alignment > SIZE_MAX - range.end - range.start)
+		return (1);
+	return (0);
 }
 
 int	map_ET_DYN(elf_info_t *elf, uint64_t page_size)
@@ -228,9 +235,12 @@ int	map_ET_DYN(elf_info_t *elf, uint64_t page_size)
 
 	/* We preallocate the required size at a random address,
 	to ensure we have enought space to load all the PT_LOADS.
-	Note that an ORIGINAL elf with no PT_LOADs must be
-	refused by the packer */
+	Note that an ORIGINAL elf with no PT_LOADs or with
+	overflowing vaddr + memsz must be refused by the packer */
 	range = get_mapping_range(elf->file_phdr, elf->file_header->e_phnum, page_size);
+
+	if (reservation_size_overflows(range, alignment))
+		return (-1);
 
 	/* mmap returns an address aligned to page_size. To satisfy p_align as well,
 	we reserve an extra "alignment" bytes. This lets us round up to the next
@@ -254,7 +264,7 @@ int	map_ET_DYN(elf_info_t *elf, uint64_t page_size)
 	address of our ET_DYN. We must therefore subtract range.start before
 	rounding up to ensure that there is enough room for all segments. */
 	elf->load_bias = round_to_page_up((uintptr_t)raw_addr - range.start, alignment);
-	elf->aslr_addr = (void*)(elf->load_bias + range.start);
+	elf->base_addr = (void*)(elf->load_bias + range.start);
 
 	/* We can free the checking reservation */
 	if (sys_munmap(raw_addr, range.end - range.start + alignment) < 0)

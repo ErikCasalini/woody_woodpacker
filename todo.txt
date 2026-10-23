@@ -150,3 +150,4 @@ KNOWN LIMITATIONS:
 -ET_EXEC elf interpreters are not supported
 -encryption quality is not the scope of the project
 -some original elf edge cases are probably not handled
+-we consider interprer as VALID

@@ -103,6 +103,7 @@ _Noreturn void	execute_packed_elf(uintptr_t *stack)
 		sys_exit(EXIT_FAILURE);
 	}
 
+	/* This stub assumes that interpreter is a valid ELF */
 	if (interp_name[0] != '\0') {
 		if (load_interpreter(&interp, interp_name, page_size) < 0) {
 			print_error(bad_interp);
@@ -111,6 +112,7 @@ _Noreturn void	execute_packed_elf(uintptr_t *stack)
 		entry = (void*)(interp.file_header->e_entry + interp.load_bias);
 	}
 	else
+		/* ORIGINAL ELF e_entry must be checked by the packer */
 		entry = (void*)(elf.file_header->e_entry + elf.load_bias);
 
 	/* We need to update auxv data to make it match the original elf configuration.
