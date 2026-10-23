@@ -106,7 +106,8 @@ static int	apply_permissions(const elf_info_t *elf, uint64_t page_size)
  table once it has been mapped, we cannot rely on the presence of a PT_PHDR
  segment, since PT_PHDR is not required by the GABI.
  Therefore, we need to determine if a PT_LOAD segment contains the file
- offset of the program header table, or set it to 0. */
+ offset of the program header table, or set it to load_bias if not found
+ (linux seems doing this). */
 static uintptr_t find_phdr_addr(const elf_info_t *elf)
 {
 	Elf64_Phdr		*segment;
@@ -115,7 +116,7 @@ static uintptr_t find_phdr_addr(const elf_info_t *elf)
 	Elf64_Off		offset;
 
 	phdr_off = elf->file_header->e_phoff;
-	phdr_size = elf->file_header->e_phnum * sizeof(Elf64_Phdr);
+	phdr_size = elf->file_header->e_phnum * elf->file_header->e_phentsize;
 
 	for (Elf64_Half i = 0; i < elf->file_header->e_phnum; i++) {
 		segment = &elf->file_phdr[i];
@@ -123,10 +124,10 @@ static uintptr_t find_phdr_addr(const elf_info_t *elf)
 			continue;
 
 		offset = phdr_off - segment->p_offset;
-		if (offset <= segment->p_filesz && phdr_size <= segment->p_filesz - offset)
+		if (offset < segment->p_filesz)
 			return (elf->load_bias + segment->p_vaddr + offset);
 	}
-	return (0);
+	return (elf->load_bias);
 }
 
 /* Copies all PT_LOAD segments from the file image into the reserved memory,
@@ -206,7 +207,7 @@ static Elf64_Xword	determine_global_alignement(Elf64_Phdr *phdr, Elf64_Half phnu
 
 static inline int reservation_size_overflows(mapping_range_t range, size_t alignment)
 {
-	if (alignment > SIZE_MAX - range.end - range.start)
+	if (alignment > SIZE_MAX - (range.end - range.start))
 		return (1);
 	return (0);
 }
