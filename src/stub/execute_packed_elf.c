@@ -9,7 +9,13 @@
 
 #define EXIT_FAILURE 1
 
-static str_code_t	init_this_elf_struct(elf_info_t *this, Elf64_auxv_t *auxv)
+static _Noreturn void	fail(stub_error_t error)
+{
+	print_error(error);
+	sys_exit(EXIT_FAILURE);
+}
+
+static stub_error_t	init_this_elf_struct(elf_info_t *this, Elf64_auxv_t *auxv)
 {
 	Elf64_auxv_t *auxv_field;
 
@@ -49,37 +55,27 @@ _Noreturn void	execute_packed_elf(uintptr_t *stack)
 
 	print_start_msg();
 
-	if (!stack) {
-		print_error(bad_stack);
-		sys_exit(EXIT_FAILURE);
-	}
+	if (!stack)
+		fail(bad_stack);
 
 	auxv = find_auxv_start(stack);
 
 	auxv_field = find_auxv_field(auxv, AT_PAGESZ);
-	if (auxv_field == NULL) {
-		print_error(bad_auxv);
-		sys_exit(EXIT_FAILURE);
-	}
+	if (auxv_field == NULL)
+		fail(bad_auxv);
 	page_size = auxv_field->a_un.a_val;
 
 	retval = init_this_elf_struct(&this, auxv);
-	if (retval != ok) {
-		print_error(retval);
-		sys_exit(EXIT_FAILURE);
-	}
+	if (retval != ok)
+		fail(retval);
 
 	payload_header = find_elf_payload_header(&this);
-	if (payload_header == NULL) {
-		print_error(payload_not_found);
-		sys_exit(EXIT_FAILURE);
-	}
+	if (payload_header == NULL)
+		fail(payload_not_found);
 
 	elf.file_header = decrypt_payload(payload_header); // a faire
-	if (elf.file_header == NULL) {
-		print_error(corrupted);
-		sys_exit(EXIT_FAILURE);
-	}
+	if (elf.file_header == NULL)
+		fail(corrupted);
 	elf.file_sz = payload_header->decompressed_size;
 	elf.file_phdr = (Elf64_Phdr *)((unsigned char*)elf.file_header +
 					elf.file_header->e_phoff);
@@ -88,27 +84,19 @@ _Noreturn void	execute_packed_elf(uintptr_t *stack)
 		retval = map_ET_EXEC(&elf, page_size);
 	else if (elf.file_header->e_type == ET_DYN)
 		retval = map_ET_DYN(&elf, page_size);
-	else {
-		print_error(bad_e_type);
-		sys_exit(EXIT_FAILURE);
-	}
+	else
+		fail(bad_e_type);
 
-	if (retval < 0) {
-		print_error(bad_load);
-		sys_exit(EXIT_FAILURE);
-	}
+	if (retval < 0)
+		fail(bad_load);
 
-	if (find_interpreter(interp_name, &elf) < 0) {
-		print_error(bad_interp);
-		sys_exit(EXIT_FAILURE);
-	}
+	if (find_interpreter(interp_name, &elf) < 0)
+		fail(bad_interp);
 
 	/* This stub assumes that interpreter is a valid ELF */
 	if (interp_name[0] != '\0') {
-		if (load_interpreter(&interp, interp_name, page_size) < 0) {
-			print_error(bad_interp);
-			sys_exit(EXIT_FAILURE);
-		}
+		if (load_interpreter(&interp, interp_name, page_size) < 0)
+			fail(bad_interp);
 		entry = (void*)(interp.file_header->e_entry + interp.load_bias);
 	}
 	else
@@ -117,13 +105,11 @@ _Noreturn void	execute_packed_elf(uintptr_t *stack)
 
 	/* We need to update auxv data to make it match the original elf configuration.
 	It will be used by the interpreter to set the elf up */
-	if (fix_auxv(auxv, &elf, &interp) < 0) {
-		print_error(bad_auxv);
-		sys_exit(EXIT_FAILURE);
-	}
+	if (fix_auxv(auxv, &elf, &interp) < 0)
+		fail(bad_auxv);
 
 	sys_munmap(interp.file_header, interp.file_sz);
-	// sys_munmap(payload_header, payload_header->decompressed_size); Si on veut free il faut calculer la base de la page et sa fin
+	sys_munmap(payload_header, payload_header->decompressed_size); // Si on veut free il faut calculer la base de la page et sa fin
 
 	/* We jump to the loaded interepreter or directly to the decrypted elf entry */
 	jump_to_with_stack(entry, stack);

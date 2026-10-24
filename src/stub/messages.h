@@ -1,7 +1,7 @@
 #ifndef STUB_MESSAGES_H
 # define STUB_MESSAGES_H
 
-typedef enum str_code_e
+typedef enum stub_error_e
 {
 	ok,
 	bad_stack,
@@ -10,11 +10,10 @@ typedef enum str_code_e
 	bad_e_type,
 	corrupted,
 	bad_load,
-	bad_interp,
-	start_msg
-} str_code_t;
+	bad_interp
+} stub_error_t;
 
 void	print_start_msg(void);
-void	print_error(str_code_t code);
+void	print_error(stub_error_t code);
 
 #endif

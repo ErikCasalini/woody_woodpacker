@@ -33,7 +33,6 @@ STUB_SRC := src/stub/execute_packed_elf.c \
 			src/stub/syscalls/sys_close.s \
 			src/stub/syscalls/sys_exit.s \
 			src/stub/syscalls/sys_fstat.s \
-			src/stub/syscalls/sys_lseek.s \
 			src/stub/syscalls/sys_mmap.s \
 			src/stub/syscalls/sys_mprotect.s \
 			src/stub/syscalls/sys_munmap.s \
