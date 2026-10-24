@@ -24,6 +24,7 @@ static const char	error_messages[][ERR_LEN] = {
 	[corrupted] = "decrypt_in_place : original elf corrupted\n",
 	[bad_load] = "load_elf : error during mapping original elf\n",
 	[bad_interp] = "load_interpreter : invalid interpreter or error during interpreter loading\n",
+	[bad_munmap] = "munmap_files : error during file image cleanup\n",
 };
 
 void	print_start_msg(void)

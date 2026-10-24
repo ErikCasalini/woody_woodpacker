@@ -1,4 +1,6 @@
 #include <stddef.h>
+#include "../common/elf_range.h"
+#include "../common/page.h"
 #include "auxv.h"
 #include "interpreter.h"
 #include "jump_to_with_stack.h"
@@ -41,7 +43,28 @@ static stub_error_t	init_stub_info(stub_info_t *stub, Elf64_auxv_t *auxv)
 	return (ok);
 }
 
-// int	munmap_files(
+static int	munmap_files(elf_info_t *interp, payload_header_t *payload_header, size_t page_size)
+{
+	int				error = 0;
+	mapping_range_t	elf_file_range;
+	mapping_range_t	interp_file_range;
+
+	if (interp && interp->file_header) {
+		interp_file_range.start = round_to_page_down((uintptr_t)interp->file_header, page_size);
+		interp_file_range.end = round_to_page_up((uintptr_t)interp->file_header + interp->file_sz, page_size);
+		if (sys_munmap((void*)interp_file_range.start, interp_file_range.end - interp_file_range.start) < 0)
+			error = -1;
+	}
+
+	if (payload_header) {
+		elf_file_range.start = round_to_page_down((uintptr_t)payload_header, page_size);
+		elf_file_range.end = round_to_page_up((uintptr_t)payload_header + payload_header->offset + payload_header->compressed_size, page_size);
+		if (sys_munmap((void*)elf_file_range.start, elf_file_range.end - elf_file_range.start) < 0)
+			error = -1;
+	}
+
+	return (error);
+}
 
 _Noreturn void	execute_packed_elf(uintptr_t *stack)
 {
@@ -111,8 +134,8 @@ _Noreturn void	execute_packed_elf(uintptr_t *stack)
 	if (fix_auxv(auxv, &elf, &interp) < 0)
 		fail(bad_auxv);
 
-	sys_munmap(interp.file_header, interp.file_sz);
-	// sys_munmap(payload_header, payload_header->decompressed_size); // Si on veut free il faut calculer la base de la page et sa fin
+	if (munmap_files(&interp, payload_header, page_size) < 0)
+		fail(bad_munmap);
 
 	/* We jump to the loaded interepreter or directly to the decrypted elf entry */
 	jump_to_with_stack(entry, stack);
