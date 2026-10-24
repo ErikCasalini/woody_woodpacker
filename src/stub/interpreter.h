@@ -5,7 +5,7 @@
 
 # define PATH_MAX 4096
 
-int	find_interpreter(char *interp_name, elf_info_t *elf);
-int	load_interpreter(elf_info_t *interp, char *interp_name, uint64_t page_size);
+int	find_interpreter(char *interp_name, const elf_info_t *elf);
+int	load_interpreter(elf_info_t *interp, const char *interp_name, size_t page_size);
 
 #endif

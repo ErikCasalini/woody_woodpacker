@@ -27,7 +27,7 @@ static str_code_t	init_this_elf_struct(elf_info_t *this, Elf64_auxv_t *auxv)
 	if (this->mem_header->e_type == ET_EXEC)
 		this->load_bias = 0;
 	else if (this->mem_header->e_type == ET_DYN)
-		this->load_bias = (uint64_t)this->mem_header;
+		this->load_bias = (uintptr_t)this->mem_header;
 	else
 		return (bad_e_type);
 

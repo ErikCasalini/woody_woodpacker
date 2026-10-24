@@ -7,7 +7,7 @@ Accordingly to the GABI, PT_LOAD entries are sorted by ascending p_vaddr,
 so the first one gives the lower bound. The upper bound is the highest
 p_vaddr + p_memsz among all PT_LOAD segments, rounded up to a page
 boundary. */
-mapping_range_t	get_mapping_range(const Elf64_Phdr *phdr, Elf64_Half phnum, uint64_t page_size)
+mapping_range_t	get_mapping_range(const Elf64_Phdr *phdr, Elf64_Half phnum, size_t page_size)
 {
 	mapping_range_t	range = {0};
 	uintptr_t	segment_end;

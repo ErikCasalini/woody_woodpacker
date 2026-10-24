@@ -6,7 +6,7 @@
 #include "../ft/libft.h"
 #include "syscalls/syscalls.h"
 
-int	find_interpreter(char *interp_name, elf_info_t *elf)
+int	find_interpreter(char *interp_name, const elf_info_t *elf)
 {
 	char		*interp;
 	Elf64_Xword	interp_sz;
@@ -29,7 +29,7 @@ int	find_interpreter(char *interp_name, elf_info_t *elf)
 }
 
 /* We ignore any PT_INTERP in the interpreter binary */
-int	load_interpreter(elf_info_t *interp, char *interp_name, uint64_t page_size)
+int	load_interpreter(elf_info_t *interp, const char *interp_name, size_t page_size)
 {
 	int			interp_fd;
 	struct stat	st;
@@ -41,7 +41,7 @@ int	load_interpreter(elf_info_t *interp, char *interp_name, uint64_t page_size)
 	if (sys_fstat(interp_fd, &st) < 0)
 		goto close_fd;
 
-	interp->file_sz = st.st_size;
+	interp->file_sz = (size_t)st.st_size;
 	interp->file_header = (Elf64_Ehdr*) sys_mmap(NULL,
 										interp->file_sz,
 										PROT_READ,

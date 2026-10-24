@@ -7,7 +7,7 @@
 #include "syscalls/syscalls.h"
 
 /* Copies file data and clears the BSS space in the last copied page */
-static int	fill_segment(Elf64_Phdr *segment, const elf_info_t *elf, uintptr_t seg_start, size_t page_size)
+static int	fill_segment(const Elf64_Phdr *segment, const elf_info_t *elf, uintptr_t seg_start, size_t page_size)
 {
 	uintptr_t	page_start;		/* First page containing file data */
 	uintptr_t	data_end_addr;	/* Runtime address right after the segment's file data */
@@ -38,7 +38,7 @@ static int	fill_segment(Elf64_Phdr *segment, const elf_info_t *elf, uintptr_t se
 }
 
 /* Maps the segment's pages, then initializes its file data and BSS */
-static void	*map_segment(Elf64_Phdr *segment, const elf_info_t *elf, size_t page_size, int mmap_flag)
+static void	*map_segment(const Elf64_Phdr *segment, const elf_info_t *elf, size_t page_size, int mmap_flag)
 {
 	uintptr_t		seg_start;
 	mapping_range_t	pages;
@@ -196,7 +196,7 @@ int	map_ET_EXEC(elf_info_t *elf, size_t page_size)
 	return (map_segments(elf, page_size));
 }
 
-static Elf64_Xword	determine_global_alignement(Elf64_Phdr *phdr, Elf64_Half phnum, size_t page_size)
+static Elf64_Xword	determine_global_alignement(const Elf64_Phdr *phdr, Elf64_Half phnum, size_t page_size)
 {
 	Elf64_Xword	alignment;
 

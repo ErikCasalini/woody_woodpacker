@@ -26,7 +26,7 @@ static const char	strings[][STRINGS_LEN] = {
 
 void	print_start_msg(void)
 {
-	sys_write(STDOUT, strings[start_msg], sizeof(strings[start_msg]));
+	sys_write(STDOUT, strings[start_msg], ft_strlen(strings[start_msg]));
 }
 
 void	print_error(str_code_t code)

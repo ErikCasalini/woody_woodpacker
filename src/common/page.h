@@ -2,7 +2,9 @@
 # define PAGE_H
 
 # include <stddef.h>
+# include <stdint.h>
 
+/* Requires nonzero page_size; rounding up must fit in uintptr_t. */
 static inline uintptr_t	round_to_page_up(uintptr_t value, size_t page_size)
 {
 	uintptr_t tmp;
