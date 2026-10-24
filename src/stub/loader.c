@@ -187,7 +187,6 @@ int	map_ET_EXEC(elf_info_t *elf, size_t page_size)
 		) < 0)
 		return (-1);
 
-	elf->base_addr = (void*)range.start;
 	elf->load_bias = 0;
 
 	if (sys_munmap((void*)range.start, range.end - range.start) < 0)
@@ -272,7 +271,6 @@ int	map_ET_DYN(elf_info_t *elf, size_t page_size)
 	address of our ET_DYN. We must therefore subtract range.start before
 	rounding up to ensure that there is enough room for all segments. */
 	elf->load_bias = round_to_page_up((uintptr_t)raw_addr - range.start, alignment);
-	elf->base_addr = (void*)(elf->load_bias + range.start);
 
 	/* We can free the checking reservation */
 	if (sys_munmap(raw_addr, range.end - range.start + alignment) < 0)
