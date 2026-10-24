@@ -43,7 +43,7 @@ _Noreturn void	execute_packed_elf(uintptr_t *stack)
 	payload_header_t	*payload_header;				/* Will contain the address of the ORIGINAL elf payload header */
 	char				interp_name[PATH_MAX] = {0};	/* Will contain the string of the ORIGINAL elf interpreter's name */
 	void				*entry = NULL;					/* Will contain the entry address of the ORIGINAL elf or its interpreter's */
-	uint64_t			page_size;						/* Will contain the page size for this execution */
+	size_t				page_size;						/* Will contain the page size for this execution */
 	int					retval;
 	Elf64_auxv_t		*auxv_field;
 
@@ -80,7 +80,7 @@ _Noreturn void	execute_packed_elf(uintptr_t *stack)
 		print_error(corrupted);
 		sys_exit(EXIT_FAILURE);
 	}
-	elf.file_data_sz = payload_header->decompressed_size;
+	elf.file_sz = payload_header->decompressed_size;
 	elf.file_phdr = (Elf64_Phdr *)((unsigned char*)elf.file_header +
 					elf.file_header->e_phoff);
 
@@ -122,7 +122,7 @@ _Noreturn void	execute_packed_elf(uintptr_t *stack)
 		sys_exit(EXIT_FAILURE);
 	}
 
-	sys_munmap(interp.file_header, interp.file_data_sz);
+	sys_munmap(interp.file_header, interp.file_sz);
 	// sys_munmap(payload_header, payload_header->decompressed_size); Si on veut free il faut calculer la base de la page et sa fin
 
 	/* We jump to the loaded interepreter or directly to the decrypted elf entry */

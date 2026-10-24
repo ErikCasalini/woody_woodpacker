@@ -28,8 +28,7 @@ int	find_interpreter(char *interp_name, elf_info_t *elf)
 	return (0);
 }
 
-/* Accordingly to the Linux kernel behaviour, the stub ignores any
-PT_INTERP in the interpreter binary */
+/* We ignore any PT_INTERP in the interpreter binary */
 int	load_interpreter(elf_info_t *interp, char *interp_name, uint64_t page_size)
 {
 	int			interp_fd;
@@ -42,9 +41,9 @@ int	load_interpreter(elf_info_t *interp, char *interp_name, uint64_t page_size)
 	if (sys_fstat(interp_fd, &st) < 0)
 		goto close_fd;
 
-	interp->file_data_sz = st.st_size;
+	interp->file_sz = st.st_size;
 	interp->file_header = (Elf64_Ehdr*) sys_mmap(NULL,
-										interp->file_data_sz,
+										interp->file_sz,
 										PROT_READ,
 										MAP_PRIVATE,
 										interp_fd,
@@ -70,7 +69,7 @@ int	load_interpreter(elf_info_t *interp, char *interp_name, uint64_t page_size)
 	return (0);
 
 free_interp_load_zone:
-	sys_munmap(interp->file_header, interp->file_data_sz);
+	sys_munmap(interp->file_header, interp->file_sz);
 close_fd:
 	sys_close(interp_fd);
 	return (-1);
