@@ -1,7 +1,7 @@
 CC := clang
 LD := ld
 
-LINKER_SCRIPT := src/stub/linker_script
+LINKER_SCRIPT := linker_script
 
 STUB_OBJ_DIR := stub_bin
 STUB := $(STUB_OBJ_DIR)/stub.elf
@@ -67,7 +67,7 @@ all: $(PACKER)
 
 debug:
 	$(MAKE) -B $(PACKER) PACKER_CFLAGS="$(PACKER_CFLAGS) -DDEBUG"
-	
+
 stub: $(STUB)
 
 $(STUB): $(STUB_OBJ) $(LINKER_SCRIPT)
