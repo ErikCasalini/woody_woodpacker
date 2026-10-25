@@ -1,6 +1,17 @@
 # Woody
 
-An x86-64 ELF packer with a freestanding loader embedded in the generated file.
+An educational x86-64 ELF packer inspired by [UPX](https://upx.github.io/), with a
+freestanding loader embedded in the generated file. The original ELF is currently
+stored uncompressed and unencrypted.
+
+## Comprendre le projet
+
+Le [guide d'apprentissage en français](docs/APPRENTISSAGES.md) part des bases du
+format ELF pour expliquer le chargement, la mémoire virtuelle, le stub autonome,
+la pile initiale et les choix techniques du projet, avec schémas et exemples.
+Il décrit aussi les limites, les simplifications et les erreurs possibles d'un
+projet d'études réalisé avec un temps limité. Le C, l'assembleur et le build
+servent de fil conducteur.
 
 ## Build and checks
 
@@ -19,7 +30,7 @@ Generated fixtures and packed files stay in temporary directories.
 To build with the output layout printed by the packer:
 
 ```sh
-make re PACKER_CFLAGS='-Wall -Werror -Wextra -g -MMD -DPACKER_DEBUG'
+make re PACKER_CFLAGS='-Wall -Werror -Wextra -g -MMD -DDEBUG'
 ```
 
 ## Source layout
