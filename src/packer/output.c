@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include "../ft/libft.h"
+#include "../common/rc4.h"
 
 int	create_output_file(const char *path, const struct stat *target_st)
 {
@@ -80,8 +81,9 @@ error_t	fill_output_elf(int						output_fd,
 						const Elf64_Ehdr		*target_file_data,
 						const payload_header_t	*payload_header)
 {
-	const void	*start_stub_section;
-	ssize_t		written;
+	const void		*start_stub_section;
+	unsigned char	*payload;
+	ssize_t			written;
 
 	start_stub_section = (const unsigned char*)packer_file_data + packer_stub_section->sh_offset;
 
@@ -113,7 +115,15 @@ error_t	fill_output_elf(int						output_fd,
 	if (written != (ssize_t)sizeof(payload_header_t))
 		return (write_error);
 
-	written = write(output_fd, target_file_data, payload_header->decompressed_size);
+	payload = malloc(payload_header->decompressed_size);
+	if (payload == NULL)
+		return (write_error);
+	ft_memcpy(payload, target_file_data, payload_header->decompressed_size);
+	rc4_crypt((const unsigned char*)&payload_header->key,
+			sizeof(payload_header->key),
+			payload, payload_header->decompressed_size);
+	written = write(output_fd, payload, payload_header->decompressed_size);
+	free(payload);
 	if (written != (ssize_t)payload_header->decompressed_size)
 		return (write_error);
 
