@@ -11,7 +11,7 @@ STUB_ASFLAGS := -Xassembler --fatal-warnings
 STUB_LDFLAGS := -static --no-dynamic-linker -T $(LINKER_SCRIPT)
 
 PACKER_OBJ_DIR := packer_bin
-PACKER := packer
+PACKER := woody_woodpacker
 PACKER_CFLAGS := -Wall -Werror -Wextra -g -MMD
 
 PACKED_FILE := woody
