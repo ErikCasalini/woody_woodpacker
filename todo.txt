@@ -151,3 +151,5 @@ KNOWN LIMITATIONS:
 -encryption quality is not the scope of the project
 -some original elf edge cases are probably not handled
 -we consider interprer as VALID
+-original elfs that inspects themselves with getauxv() will receive bad informations since those kind of syscals return internal kernel informations, yet we only modified the stack info.
+-packing an already packed elf may cause undefined behaviour
