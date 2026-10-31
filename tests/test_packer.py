@@ -8,7 +8,7 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PACKER = ROOT / "packer"
+PACKER = ROOT / "woody_woodpacker"
 
 
 def run(args, cwd, env=None):
@@ -116,10 +116,17 @@ msg: .ascii "static-ok\\n"
                 magic, compressed_sz, decompressed_sz, off, key = struct.unpack_from(
                     "<8sQQQQ", data, payload[2],
                 )
-                self.assertEqual((magic, off, key), (b"WOODY\0\0\0", 40, 0))
+                self.assertEqual((magic, off), (b"WOODY\0\0\0", 40))
                 self.assertEqual(compressed_sz, fixture.stat().st_size)
                 self.assertEqual(decompressed_sz, fixture.stat().st_size)
-                self.assertEqual(data[payload[2] + off:], fixture.read_bytes())
+                # The payload is encrypted at rest: a random key is stored and
+                # the bytes on disk must differ from the original ELF and must
+                # not expose the ELF magic in clear.
+                self.assertNotEqual(key, 0)
+                stored_payload = data[payload[2] + off:]
+                self.assertEqual(len(stored_payload), fixture.stat().st_size)
+                self.assertNotEqual(stored_payload, fixture.read_bytes())
+                self.assertNotEqual(stored_payload[:4], b"\x7fELF")
 
     def test_invalid_inputs_preserve_existing_output_or_leave_it_absent(self):
         base = bytearray(self.fixtures[0].read_bytes())
@@ -191,6 +198,37 @@ msg: .ascii "static-ok\\n"
                 result = run([self.output], self.work)
                 self.assertEqual(result.returncode, 1)
                 self.assertIn(b"find_elf_payload_header", result.stderr)
+
+    def test_key_is_random_printed_and_matches_header(self):
+        keys = set()
+        for _ in range(2):
+            packed = self.pack(self.fixtures[0])
+            self.assertEqual(packed.returncode, 0, packed.stderr)
+            lines = [l for l in packed.stdout.splitlines()
+                     if l.startswith(b"key_value:")]
+            self.assertEqual(len(lines), 1, packed.stdout)
+            printed = lines[0].split(b"0x", 1)[1].strip()
+            self.assertEqual(len(printed), 16)   # 8 key bytes -> 16 hex chars
+            int(printed, 16)                      # must be valid hexadecimal
+            data = self.output.read_bytes()
+            payload = [ph for _, ph in phdrs(data) if ph[0] == 1][-1]
+            key_bytes = data[payload[2] + 32:payload[2] + 40]
+            self.assertEqual(printed.decode(), key_bytes.hex())
+            keys.add(bytes(key_bytes))
+        self.assertEqual(len(keys), 2)            # two packings -> two keys
+
+    def test_stub_reports_corrupted_payload_without_crashing(self):
+        packed = self.pack(self.fixtures[0])
+        self.assertEqual(packed.returncode, 0, packed.stderr)
+        data = bytearray(self.output.read_bytes())
+        payload = [ph for _, ph in phdrs(data) if ph[0] == 1][-1]
+        # Flip a byte of the encrypted ELF header: once decrypted, the ELF magic
+        # no longer matches, so the stub must refuse it cleanly (not segfault).
+        data[payload[2] + 40] ^= 0xff
+        self.output.write_bytes(data)
+        result = run([self.output], self.work)
+        self.assertEqual(result.returncode, 1)    # clean exit, not killed by a signal
+        self.assertIn(b"corrupted", result.stderr)
 
 
 if __name__ == "__main__":
