@@ -2,6 +2,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <stdlib.h>
 #include "../ft/libft.h"
 
 int	create_output_file(const char *path, const struct stat *target_st)
@@ -42,6 +43,34 @@ void	init_payload_header(payload_header_t *payload_header, const mapped_file_t *
 	payload_header->compressed_size	= (size_t)target->st.st_size;
 	payload_header->decompressed_size = (size_t)target->st.st_size;
 	payload_header->offset = sizeof(payload_header_t);
+}
+
+error_t	generate_payload_key(payload_header_t *payload_header)
+{
+	unsigned char *key;
+	size_t        total;
+	ssize_t       n;
+	int           fd;
+	int           errno_backup;
+
+	key = (unsigned char*)&payload_header->key;
+	fd = open("/dev/urandom", O_RDONLY);
+	if (fd < 0)
+		return (bad_open);
+	total = 0;
+	while (total < sizeof(payload_header->key)) {
+		n = read(fd, key + total, sizeof(payload_header->key) - total);
+		if (n <= 0) {
+			errno_backup = errno;
+			close(fd);
+			errno = errno_backup;
+			return (bad_read);
+		}
+		total += (size_t)n;
+	}
+	if (close(fd) < 0)
+		return (bad_close);
+	return (ok);
 }
 
 error_t	fill_output_elf(int						output_fd,

@@ -94,6 +94,9 @@ void	print_error(error_t error)
 		case bad_close:
 			perror("Error: close()");
 			break;
+		case bad_read:
+			perror("Error: read()");
+			break;
 		default:
 			fprintf(stderr, "Error: unexpected error (%d)\n", error);
 	}

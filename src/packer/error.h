@@ -33,7 +33,8 @@ typedef enum error_e
 	bad_mmap,
 	bad_munmap,
 	bad_fstat,
-	bad_close
+	bad_close,
+	bad_read
 } error_t;
 
 void	print_error(error_t error);
