@@ -17,6 +17,7 @@ PACKER_CFLAGS := -Wall -Werror -Wextra -g -MMD
 PACKED_FILE := woody
 
 COMMON_SRC := src/common/elf_range.c \
+			  src/common/rc4.c \
 			  src/ft/ft_memcpy.c \
 			  src/ft/ft_memmove.c \
 			  src/ft/ft_memset.c \
