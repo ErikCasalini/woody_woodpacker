@@ -99,7 +99,7 @@ _Noreturn void	execute_packed_elf(uintptr_t *stack)
 	if (payload_header == NULL)
 		fail(payload_not_found);
 
-	elf.file_header = decrypt_payload(payload_header); // a faire
+	elf.file_header = decrypt_payload(payload_header);
 	if (elf.file_header == NULL)
 		fail(corrupted);
 	elf.file_sz = payload_header->decompressed_size;
