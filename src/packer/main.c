@@ -82,7 +82,7 @@ int main(int argc, char *argv[])
 		goto cleanup;
 	}
 	{
-		const unsigned char	*key = (const unsigned char*)&payload_header.key;
+		const unsigned char	*key = payload_header.key;
 
 		printf("key_value: 0x");
 		for (size_t i = 0; i < sizeof(payload_header.key); i++)

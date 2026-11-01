@@ -4,7 +4,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include "../ft/libft.h"
-#include "../common/rc4.h"
+#include "../common/chacha20.h"
 
 int	create_output_file(const char *path, const struct stat *target_st)
 {
@@ -54,7 +54,7 @@ error_t	generate_payload_key(payload_header_t *payload_header)
 	int           fd;
 	int           errno_backup;
 
-	key = (unsigned char*)&payload_header->key;
+	key = payload_header->key;
 	fd = open("/dev/urandom", O_RDONLY);
 	if (fd < 0)
 		return (bad_open);
@@ -81,9 +81,10 @@ error_t	fill_output_elf(int						output_fd,
 						const Elf64_Ehdr		*target_file_data,
 						const payload_header_t	*payload_header)
 {
-	const void		*start_stub_section;
-	unsigned char	*payload;
-	ssize_t			written;
+	static const uint8_t  nonce[CHACHA20_NONCE_SIZE] = {0};
+	const void            *start_stub_section;
+	unsigned char         *payload;
+	ssize_t               written;
 
 	start_stub_section = (const unsigned char*)packer_file_data + packer_stub_section->sh_offset;
 
@@ -119,8 +120,7 @@ error_t	fill_output_elf(int						output_fd,
 	if (payload == NULL)
 		return (write_error);
 	ft_memcpy(payload, target_file_data, payload_header->decompressed_size);
-	rc4_crypt((const unsigned char*)&payload_header->key,
-			sizeof(payload_header->key),
+	chacha20_crypt(payload_header->key, nonce, 0,
 			payload, payload_header->decompressed_size);
 	written = write(output_fd, payload, payload_header->decompressed_size);
 	free(payload);
