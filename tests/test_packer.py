@@ -114,15 +114,15 @@ msg: .ascii "static-ok\\n"
                 self.assertFalse(any(ph[0] in (2, 3) for ph in headers))
                 payload = [ph for ph in headers if ph[0] == 1][-1]
                 magic, compressed_sz, decompressed_sz, off, key = struct.unpack_from(
-                    "<8sQQQQ", data, payload[2],
+                    "<8sQQQ32s", data, payload[2],
                 )
-                self.assertEqual((magic, off), (b"WOODY\0\0\0", 40))
+                self.assertEqual((magic, off), (b"WOODY\0\0\0", 64))
                 self.assertEqual(compressed_sz, fixture.stat().st_size)
                 self.assertEqual(decompressed_sz, fixture.stat().st_size)
                 # The payload is encrypted at rest: a random key is stored and
                 # the bytes on disk must differ from the original ELF and must
                 # not expose the ELF magic in clear.
-                self.assertNotEqual(key, 0)
+                self.assertNotEqual(key, b"\x00" * 32)
                 stored_payload = data[payload[2] + off:]
                 self.assertEqual(len(stored_payload), fixture.stat().st_size)
                 self.assertNotEqual(stored_payload, fixture.read_bytes())
@@ -208,11 +208,11 @@ msg: .ascii "static-ok\\n"
                      if l.startswith(b"key_value:")]
             self.assertEqual(len(lines), 1, packed.stdout)
             printed = lines[0].split(b"0x", 1)[1].strip()
-            self.assertEqual(len(printed), 16)   # 8 key bytes -> 16 hex chars
+            self.assertEqual(len(printed), 64)   # 32 key bytes -> 64 hex chars
             int(printed, 16)                      # must be valid hexadecimal
             data = self.output.read_bytes()
             payload = [ph for _, ph in phdrs(data) if ph[0] == 1][-1]
-            key_bytes = data[payload[2] + 32:payload[2] + 40]
+            key_bytes = data[payload[2] + 32:payload[2] + 64]
             self.assertEqual(printed.decode(), key_bytes.hex())
             keys.add(bytes(key_bytes))
         self.assertEqual(len(keys), 2)            # two packings -> two keys
@@ -224,7 +224,7 @@ msg: .ascii "static-ok\\n"
         payload = [ph for _, ph in phdrs(data) if ph[0] == 1][-1]
         # Flip a byte of the encrypted ELF header: once decrypted, the ELF magic
         # no longer matches, so the stub must refuse it cleanly (not segfault).
-        data[payload[2] + 40] ^= 0xff
+        data[payload[2] + 64] ^= 0xff
         self.output.write_bytes(data)
         result = run([self.output], self.work)
         self.assertEqual(result.returncode, 1)    # clean exit, not killed by a signal
