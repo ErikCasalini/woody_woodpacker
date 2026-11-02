@@ -117,14 +117,18 @@ msg: .ascii "static-ok\\n"
                     "<8sQQQ32s", data, payload[2],
                 )
                 self.assertEqual((magic, off), (b"WOODY\0\0\0", 64))
-                self.assertEqual(compressed_sz, fixture.stat().st_size)
-                self.assertEqual(decompressed_sz, fixture.stat().st_size)
+                size = fixture.stat().st_size
+                # decompressed_size is always the original size; compressed_size
+                # is <= it (smaller when compression helped, equal in the
+                # "stored" fallback for incompressible inputs).
+                self.assertEqual(decompressed_sz, size)
+                self.assertLessEqual(compressed_sz, size)
                 # The payload is encrypted at rest: a random key is stored and
                 # the bytes on disk must differ from the original ELF and must
                 # not expose the ELF magic in clear.
                 self.assertNotEqual(key, b"\x00" * 32)
                 stored_payload = data[payload[2] + off:]
-                self.assertEqual(len(stored_payload), fixture.stat().st_size)
+                self.assertEqual(len(stored_payload), compressed_sz)
                 self.assertNotEqual(stored_payload, fixture.read_bytes())
                 self.assertNotEqual(stored_payload[:4], b"\x7fELF")
 
@@ -229,6 +233,73 @@ msg: .ascii "static-ok\\n"
         result = run([self.output], self.work)
         self.assertEqual(result.returncode, 1)    # clean exit, not killed by a signal
         self.assertIn(b"corrupted", result.stderr)
+
+    def _blob_fixture(self, name, blob, message, exit_code):
+        """Build a tiny static ET_EXEC whose file is dominated by `blob`
+        (embedded verbatim via .incbin), so its compressibility is driven by
+        the blob's content: constant bytes -> compresses, random -> stored."""
+        (self.work / "blob.bin").write_bytes(blob)
+        asm = self.work / f"{name}.s"
+        asm.write_text(f'''.intel_syntax noprefix
+.global _start
+.text
+_start:
+    mov eax, 1
+    mov edi, 1
+    lea rsi, [rip + msg]
+    mov edx, {len(message) + 1}
+    syscall
+    mov eax, 60
+    mov edi, {exit_code}
+    syscall
+.section .rodata
+msg: .ascii "{message}\\n"
+blob: .incbin "blob.bin"
+.section .note.GNU-stack,"",@progbits
+''')
+        result = run(["clang", "-nostdlib", "-static", asm.name, "-o", name], self.work)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return self.work / name
+
+    def _payload_sizes(self, data):
+        payload = [ph for _, ph in phdrs(data) if ph[0] == 1][-1]
+        _, compressed, decompressed, _, _ = struct.unpack_from(
+            "<8sQQQ32s", data, payload[2],
+        )
+        return compressed, decompressed
+
+    def test_compression_shrinks_a_compressible_payload(self):
+        fixture = self._blob_fixture("compressible", b"\xab" * 262144, "ratio-ok", 21)
+        packed = self.pack(fixture)
+        self.assertEqual(packed.returncode, 0, packed.stderr)
+        compressed, decompressed = self._payload_sizes(self.output.read_bytes())
+        self.assertEqual(decompressed, fixture.stat().st_size)
+        self.assertLess(compressed, decompressed // 2)   # compression is active
+
+    def test_round_trip_runs_with_compression_active(self):
+        fixture = self._blob_fixture("roundtrip", b"\xab" * 262144, "ratio-ok", 21)
+        original = run([fixture], self.work)
+        self.assertEqual(original.returncode, 21)
+        packed = self.pack(fixture)
+        self.assertEqual(packed.returncode, 0, packed.stderr)
+        compressed, decompressed = self._payload_sizes(self.output.read_bytes())
+        self.assertLess(compressed, decompressed)        # really compressed, not stored
+        executed = run([self.output], self.work)
+        self.assertEqual(executed.returncode, original.returncode, executed.stderr)
+        self.assertTrue(executed.stdout.endswith(original.stdout), executed.stdout)
+
+    def test_incompressible_payload_falls_back_to_stored(self):
+        fixture = self._blob_fixture("incompressible", os.urandom(262144), "stored-ok", 19)
+        original = run([fixture], self.work)
+        self.assertEqual(original.returncode, 19)
+        packed = self.pack(fixture)
+        self.assertEqual(packed.returncode, 0, packed.stderr)
+        compressed, decompressed = self._payload_sizes(self.output.read_bytes())
+        self.assertEqual(decompressed, fixture.stat().st_size)
+        self.assertEqual(compressed, decompressed)       # stored fallback, no compression
+        executed = run([self.output], self.work)
+        self.assertEqual(executed.returncode, original.returncode, executed.stderr)
+        self.assertTrue(executed.stdout.endswith(original.stdout), executed.stdout)
 
 
 if __name__ == "__main__":
