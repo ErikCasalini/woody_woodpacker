@@ -1,5 +1,7 @@
 #include "payload.h"
 #include <stddef.h>
+#include "../common/chacha20.h"
+#include <elf.h>
 
 /* The stub assumes that the original ELF is encrypted/compressed
  in the last PT_LOAD. At its first offset, there must be a
@@ -28,8 +30,21 @@ payload_header_t	*find_elf_payload_header(const stub_info_t *stub)
 	return (payload_header);
 }
 
-/* No encryption for now */
 Elf64_Ehdr	*decrypt_payload(payload_header_t *payload_header)
 {
-	return ((Elf64_Ehdr*)((unsigned char*)payload_header + payload_header->offset));
+  static const uint8_t  nonce[CHACHA20_NONCE_SIZE] = {0};
+  Elf64_Ehdr  *elf;
+
+  elf = (Elf64_Ehdr*)((unsigned char*)payload_header + payload_header->offset);
+
+  chacha20_crypt(payload_header->key, nonce, 0,
+    (uint8_t*)elf, payload_header->decompressed_size);
+
+  if ((elf->e_ident[EI_MAG0] != ELFMAG0)
+    || (elf->e_ident[EI_MAG1] != ELFMAG1)
+    || (elf->e_ident[EI_MAG2] != ELFMAG2)
+    || (elf->e_ident[EI_MAG3] != ELFMAG3))
+    return (NULL);
+
+	return (elf);
 }

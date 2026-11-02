@@ -76,6 +76,20 @@ int main(int argc, char *argv[])
 
 	init_payload_header(&payload_header, &target);
 
+	error = generate_payload_key(&payload_header);
+	if (error != ok) {
+		print_error(error);
+		goto cleanup;
+	}
+	{
+		const unsigned char	*key = payload_header.key;
+
+		printf("key_value: 0x");
+		for (size_t i = 0; i < sizeof(payload_header.key); i++)
+			printf("%02x", key[i]);
+		printf("\n");
+	}
+
 #ifdef DEBUG
 	print_output_layout(&output_layout);
 #endif
