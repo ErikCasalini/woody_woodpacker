@@ -18,6 +18,7 @@ PACKED_FILE := woody
 
 COMMON_SRC := src/common/elf_range.c \
 			  src/common/chacha20.c \
+			  src/common/lzss.c \
 			  src/ft/ft_memcpy.c \
 			  src/ft/ft_memmove.c \
 			  src/ft/ft_memset.c \
