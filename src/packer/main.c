@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 #include <sys/mman.h>
 #include "debug.h"
@@ -25,6 +26,8 @@ int main(int argc, char *argv[])
 	int					output_fd = -1;
 	payload_header_t	payload_header = {0};
 	elf_layout_t		output_layout = {0};
+	unsigned char		*payload_buf = NULL;
+	size_t				compressed_size = 0;
 	const Elf64_Shdr	*packer_stub_section;
 	int64_t				page_size;
 	error_t				error;
@@ -63,19 +66,6 @@ int main(int argc, char *argv[])
 		goto cleanup;
 	}
 
-	error = init_output_headers(
-				&output_layout,
-				&target,
-				packer_stub_section,
-				page_size
-			);
-	if (error != ok) {
-		print_error(error);
-		goto cleanup;
-	}
-
-	init_payload_header(&payload_header, &target);
-
 	error = generate_payload_key(&payload_header);
 	if (error != ok) {
 		print_error(error);
@@ -88,6 +78,26 @@ int main(int argc, char *argv[])
 		for (size_t i = 0; i < sizeof(payload_header.key); i++)
 			printf("%02x", key[i]);
 		printf("\n");
+	}
+
+	error = build_payload(&target, payload_header.key, &payload_buf, &compressed_size);
+	if (error != ok) {
+		print_error(error);
+		goto cleanup;
+	}
+
+	init_payload_header(&payload_header, &target, compressed_size);
+
+	error = init_output_headers(
+				&output_layout,
+				&target,
+				compressed_size,
+				packer_stub_section,
+				page_size
+			);
+	if (error != ok) {
+		print_error(error);
+		goto cleanup;
 	}
 
 #ifdef DEBUG
@@ -105,8 +115,9 @@ int main(int argc, char *argv[])
 				&output_layout,
 				packer_stub_section,
 				packer.data,
-				target.data,
-				&payload_header
+				&payload_header,
+				payload_buf,
+				compressed_size
 			);
 	if (error != ok) {
 		print_error(error);
@@ -127,6 +138,7 @@ cleanup:
 		perror("Error: unmapping file");
 	if (packer.data != MAP_FAILED && munmap(packer.data, packer.st.st_size) < 0)
 		perror("Error: unmapping file");
+	free(payload_buf);
 	if (status == 0)
 		printf("ELF successuflly packed!\n");
 

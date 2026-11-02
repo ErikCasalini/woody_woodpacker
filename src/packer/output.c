@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include "../ft/libft.h"
 #include "../common/chacha20.h"
+#include "../common/lzss.h"
 
 int	create_output_file(const char *path, const struct stat *target_st)
 {
@@ -38,12 +39,38 @@ cleanup:
 	return (-1);
 }
 
-void	init_payload_header(payload_header_t *payload_header, const mapped_file_t *target)
+void	init_payload_header(payload_header_t *payload_header, const mapped_file_t *target, size_t compressed_size)
 {
 	ft_memcpy(payload_header->magic, PAYLOAD_MAGIC, sizeof(PAYLOAD_MAGIC));
-	payload_header->compressed_size	= (size_t)target->st.st_size;
+	payload_header->compressed_size = compressed_size;
 	payload_header->decompressed_size = (size_t)target->st.st_size;
 	payload_header->offset = sizeof(payload_header_t);
+}
+
+error_t	build_payload(const mapped_file_t	*target,
+		const uint8_t			key[CHACHA20_KEY_SIZE],
+		unsigned char			**out_buf,
+		size_t				*out_size)
+{
+	static const uint8_t	nonce[CHACHA20_NONCE_SIZE] = {0};
+	size_t			decompressed_size;
+	size_t			compressed_size;
+	unsigned char		*buf;
+
+	decompressed_size = (size_t)target->st.st_size;
+	buf = malloc(decompressed_size ? decompressed_size : 1);
+	if (buf == NULL)
+		return (write_error);
+	compressed_size = lzss_compress((const uint8_t *)target->data,
+			decompressed_size, buf, decompressed_size);
+	if (compressed_size == LZSS_ERROR || compressed_size >= decompressed_size) {
+		ft_memcpy(buf, target->data, decompressed_size);
+		compressed_size = decompressed_size;
+	}
+	chacha20_crypt(key, nonce, 0, buf, compressed_size);
+	*out_buf = buf;
+	*out_size = compressed_size;
+	return (ok);
 }
 
 error_t	generate_payload_key(payload_header_t *payload_header)
@@ -78,12 +105,11 @@ error_t	fill_output_elf(int						output_fd,
 						const elf_layout_t		*output,
 						const Elf64_Shdr		*packer_stub_section,
 						const Elf64_Ehdr		*packer_file_data,
-						const Elf64_Ehdr		*target_file_data,
-						const payload_header_t	*payload_header)
+						const payload_header_t	*payload_header,
+						const unsigned char		*payload_buf,
+						size_t					payload_size)
 {
-	static const uint8_t  nonce[CHACHA20_NONCE_SIZE] = {0};
 	const void            *start_stub_section;
-	unsigned char         *payload;
 	ssize_t               written;
 
 	start_stub_section = (const unsigned char*)packer_file_data + packer_stub_section->sh_offset;
@@ -116,15 +142,8 @@ error_t	fill_output_elf(int						output_fd,
 	if (written != (ssize_t)sizeof(payload_header_t))
 		return (write_error);
 
-	payload = malloc(payload_header->decompressed_size);
-	if (payload == NULL)
-		return (write_error);
-	ft_memcpy(payload, target_file_data, payload_header->decompressed_size);
-	chacha20_crypt(payload_header->key, nonce, 0,
-			payload, payload_header->decompressed_size);
-	written = write(output_fd, payload, payload_header->decompressed_size);
-	free(payload);
-	if (written != (ssize_t)payload_header->decompressed_size)
+	written = write(output_fd, payload_buf, payload_size);
+	if (written != (ssize_t)payload_size)
 		return (write_error);
 
 	return (ok);
