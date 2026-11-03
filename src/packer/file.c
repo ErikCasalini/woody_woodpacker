@@ -24,7 +24,7 @@ error_t	map_file(const char *path, mapped_file_t *file)
 		goto cleanup;
 	}
 
-	data = mmap(NULL, file->st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+	data = mmap(NULL, file->st.st_size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
 	if (data == MAP_FAILED) {
 		error = bad_mmap;
 		goto cleanup;

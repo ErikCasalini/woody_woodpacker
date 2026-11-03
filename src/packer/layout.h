@@ -4,6 +4,7 @@
 # include <elf.h>
 # include <stdint.h>
 # include "file.h"
+# include "payload.h"
 
 typedef struct elf_layout_s
 {
@@ -14,6 +15,5 @@ typedef struct elf_layout_s
 	Elf64_Phdr	gnu_stack_segment;
 } elf_layout_t;
 
-error_t	init_output_headers(elf_layout_t *output, const mapped_file_t *target, const Elf64_Shdr *packer_stub_section, uint64_t page_size);
-
+error_t	init_output_headers(elf_layout_t *output, const mapped_file_t *target, const packed_payload_t *payload, const Elf64_Shdr *packer_stub_section, uint64_t page_size);
 #endif

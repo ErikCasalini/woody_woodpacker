@@ -79,6 +79,9 @@ void	print_error(error_t error)
 		case write_error:
 			fprintf(stderr, "Error: unable to write output file\n");
 			break;
+		case bad_compress:
+			fprintf(stderr, "Error unable to compress target\n");
+			break;
 		case bad_open:
 			perror("Error: open()");
 			break;
@@ -96,6 +99,9 @@ void	print_error(error_t error)
 			break;
 		case bad_read:
 			perror("Error: read()");
+			break;
+		case bad_malloc:
+			perror("Error: malloc()");
 			break;
 		default:
 			fprintf(stderr, "Error: unexpected error (%d)\n", error);
