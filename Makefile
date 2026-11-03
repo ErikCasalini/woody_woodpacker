@@ -117,7 +117,4 @@ re:
 	$(MAKE) fclean
 	$(MAKE) all
 
-test: $(PACKER)
-	python3 tests/test_packer.py "$(abspath $(PACKER))"
-
-.PHONY: all debug stub clean fclean re test
+.PHONY: all debug stub clean fclean re
