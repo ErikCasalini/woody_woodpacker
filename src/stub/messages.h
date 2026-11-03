@@ -10,8 +10,16 @@ typedef enum stub_error_e
 	bad_e_type,
 	corrupted,
 	bad_load,
+	bad_mmap,
 	bad_interp,
-	bad_munmap
+	bad_munmap,
+	bad_key,
+	bad_decompr,
+	unexpected,
+	bad_mprotect,
+	bad_open,
+	bad_fstat,
+	bad_close
 } stub_error_t;
 
 void	print_start_msg(void);

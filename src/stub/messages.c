@@ -17,14 +17,22 @@
     "+------------------------------------------------+\n"
 
 static const char	error_messages[][ERR_LEN] = {
-	[bad_stack] = "execute_packed_elf : illformed stack\n",
-	[bad_auxv] = "find_auxv_field : invalid auxv\n",
-	[payload_not_found] = "find_elf_payload_header : original elf not found or currupted\n",
-	[bad_e_type] = "execute_packed_elf : unsupported ELF type\n",
-	[corrupted] = "decrypt_in_place : original elf corrupted\n",
-	[bad_load] = "load_elf : error during mapping original elf\n",
-	[bad_interp] = "load_interpreter : invalid interpreter or error during interpreter loading\n",
-	[bad_munmap] = "munmap_files : error during file image cleanup\n",
+	[bad_stack] = "Invalid initial stack\n",
+	[bad_auxv] = "Invalid or incomplete auxiliary vector\n",
+	[payload_not_found] = "Payload not found or invalid\n",
+	[bad_e_type] = "Unsupported ELF type\n",
+	[corrupted] = "Payload or unpacked ELF is corrupted\n",
+	[bad_load] = "Unable to prepare ELF mappings: address range is too large\n",
+	[bad_mmap] = "Unable to map memory\n",
+	[bad_interp] = "Invalid ELF interpreter path\n",
+	[bad_munmap] = "Unable to unmap memory\n",
+	[bad_key] = "Invalid key: expected 0x followed by 64 hexadecimal digits\n",
+	[bad_decompr] = "Unable to decompress payload\n",
+	[unexpected] = "Unexpected error\n",
+	[bad_mprotect] = "Unable to set memory protections\n",
+	[bad_open] = "Unable to open ELF interpreter\n",
+	[bad_fstat] = "Unable to read ELF interpreter file information\n",
+	[bad_close] = "Unable to close ELF interpreter file\n",
 };
 
 void	print_start_msg(void)
