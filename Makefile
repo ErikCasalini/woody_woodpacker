@@ -5,7 +5,7 @@ LINKER_SCRIPT := linker_script
 
 STUB_OBJ_DIR := stub_bin
 STUB := $(STUB_OBJ_DIR)/stub.elf
-STUB_CFLAGS := -Wall -Werror -Wextra -ffreestanding -fno-stack-protector -nostdlib -fPIE -MMD
+STUB_CFLAGS := -Wall -Werror -Wextra -ffreestanding -fno-stack-protector -nostdlib -fPIE -MMD -g
 # -Xassembler tels Clang to send the following option to the assembler tool
 STUB_ASFLAGS := -Xassembler --fatal-warnings
 STUB_LDFLAGS := -static --no-dynamic-linker -T $(LINKER_SCRIPT)
@@ -18,14 +18,16 @@ PACKED_FILE := woody
 
 COMMON_SRC := src/common/elf_range.c \
 			  src/common/chacha20.c \
+			  src/common/lzss.c \
 			  src/ft/ft_memcpy.c \
 			  src/ft/ft_memmove.c \
 			  src/ft/ft_memset.c \
 			  src/ft/ft_strlen.c
 
 STUB_SRC := src/stub/execute_packed_elf.c \
-			src/stub/auxv.c \
+			src/stub/stack.c \
 			src/stub/interpreter.c \
+			src/stub/key.c \
 			src/stub/loader.c \
 			src/stub/messages.c \
 			src/stub/payload.c \
@@ -44,10 +46,12 @@ PACKER_SRC := src/packer/main.c \
 			  src/packer/debug.c \
 			  src/packer/error.c \
 			  src/packer/file.c \
+			  src/packer/key.c \
 			  src/packer/layout.c \
 			  src/packer/output.c \
 			  src/packer/stub_section.c \
 			  src/packer/validate.c \
+			  src/packer/payload.c \
 			  src/ft/ft_strncmp.c
 
 STUB_ALL_SRC := $(STUB_SRC) $(COMMON_SRC)
@@ -113,7 +117,4 @@ re:
 	$(MAKE) fclean
 	$(MAKE) all
 
-test: $(PACKER)
-	python3 tests/test_packer.py "$(abspath $(PACKER))"
-
-.PHONY: all debug stub clean fclean re test
+.PHONY: all debug stub clean fclean re

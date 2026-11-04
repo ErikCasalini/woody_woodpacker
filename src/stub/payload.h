@@ -3,8 +3,10 @@
 
 # include "stub_info.h"
 # include "../common/payload.h"
+# include "messages.h"
+# include "elf_info.h"
 
-payload_header_t	*find_elf_payload_header(const stub_info_t *stub);
-Elf64_Ehdr			*decrypt_payload(payload_header_t *payload_header);
+stub_error_t	extract_payload(packed_payload_t *payload, const stub_info_t *stub);
+stub_error_t	unpack_payload(packed_payload_t *payload, elf_info_t *elf);
 
 #endif

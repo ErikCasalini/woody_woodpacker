@@ -1,10 +1,8 @@
-#include "output.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <stdlib.h>
-#include "../ft/libft.h"
-#include "../common/chacha20.h"
+#include "output.h"
+#include "payload.h"
 
 int	create_output_file(const char *path, const struct stat *target_st)
 {
@@ -38,52 +36,14 @@ cleanup:
 	return (-1);
 }
 
-void	init_payload_header(payload_header_t *payload_header, const mapped_file_t *target)
-{
-	ft_memcpy(payload_header->magic, PAYLOAD_MAGIC, sizeof(PAYLOAD_MAGIC));
-	payload_header->compressed_size	= (size_t)target->st.st_size;
-	payload_header->decompressed_size = (size_t)target->st.st_size;
-	payload_header->offset = sizeof(payload_header_t);
-}
-
-error_t	generate_payload_key(payload_header_t *payload_header)
-{
-	unsigned char *key;
-	size_t        total;
-	ssize_t       n;
-	int           fd;
-	int           errno_backup;
-
-	key = payload_header->key;
-	fd = open("/dev/urandom", O_RDONLY);
-	if (fd < 0)
-		return (bad_open);
-	total = 0;
-	while (total < sizeof(payload_header->key)) {
-		n = read(fd, key + total, sizeof(payload_header->key) - total);
-		if (n <= 0) {
-			errno_backup = errno;
-			close(fd);
-			errno = errno_backup;
-			return (bad_read);
-		}
-		total += (size_t)n;
-	}
-	if (close(fd) < 0)
-		return (bad_close);
-	return (ok);
-}
-
 error_t	fill_output_elf(int						output_fd,
 						const elf_layout_t		*output,
 						const Elf64_Shdr		*packer_stub_section,
 						const Elf64_Ehdr		*packer_file_data,
-						const Elf64_Ehdr		*target_file_data,
-						const payload_header_t	*payload_header)
+						const packed_payload_t	*payload
+						)
 {
-	static const uint8_t  nonce[CHACHA20_NONCE_SIZE] = {0};
 	const void            *start_stub_section;
-	unsigned char         *payload;
 	ssize_t               written;
 
 	start_stub_section = (const unsigned char*)packer_file_data + packer_stub_section->sh_offset;
@@ -112,19 +72,12 @@ error_t	fill_output_elf(int						output_fd,
 	if (written != (ssize_t)packer_stub_section->sh_size)
 		return (write_error);
 
-	written = write(output_fd, payload_header, sizeof(payload_header_t));
+	written = write(output_fd, &payload->header, sizeof(payload_header_t));
 	if (written != (ssize_t)sizeof(payload_header_t))
 		return (write_error);
 
-	payload = malloc(payload_header->decompressed_size);
-	if (payload == NULL)
-		return (write_error);
-	ft_memcpy(payload, target_file_data, payload_header->decompressed_size);
-	chacha20_crypt(payload_header->key, nonce, 0,
-			payload, payload_header->decompressed_size);
-	written = write(output_fd, payload, payload_header->decompressed_size);
-	free(payload);
-	if (written != (ssize_t)payload_header->decompressed_size)
+	written = write(output_fd, payload->data, payload->header.compressed_size);
+	if (written != (ssize_t)payload->header.compressed_size)
 		return (write_error);
 
 	return (ok);

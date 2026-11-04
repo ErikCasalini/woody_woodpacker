@@ -1,14 +1,16 @@
 #include <stddef.h>
 #include "../common/elf_range.h"
 #include "../common/page.h"
-#include "auxv.h"
+#include "stack.h"
 #include "interpreter.h"
+#include "key.h"
 #include "jump_to_with_stack.h"
 #include "loader.h"
 #include "messages.h"
 #include "payload.h"
 #include "stub_info.h"
 #include "syscalls/syscalls.h"
+#include "../common/chacha20.h"
 
 #define EXIT_FAILURE 1
 
@@ -43,46 +45,58 @@ static stub_error_t	init_stub_info(stub_info_t *stub, Elf64_auxv_t *auxv)
 	return (ok);
 }
 
-static int	munmap_files(elf_info_t *interp, payload_header_t *payload_header, size_t page_size)
+static stub_error_t	munmap_files(elf_info_t *interp, elf_info_t *elf, packed_payload_t *payload, size_t page_size)
 {
 	int				error = 0;
-	mapping_range_t	elf_file_range;
-	mapping_range_t	interp_file_range;
+	mapping_range_t	range;
 
 	if (interp && interp->file_header) {
-		interp_file_range.start = round_to_page_down((uintptr_t)interp->file_header, page_size);
-		interp_file_range.end = round_to_page_up((uintptr_t)interp->file_header + interp->file_sz, page_size);
-		if (sys_munmap((void*)interp_file_range.start, interp_file_range.end - interp_file_range.start) < 0)
+		range.start = round_to_page_down((uintptr_t)interp->file_header, page_size);
+		range.end = round_to_page_up((uintptr_t)interp->file_header + interp->file_sz, page_size);
+		if (sys_munmap((void*)range.start, range.end - range.start) < 0)
 			error = -1;
 	}
 
-	if (payload_header) {
-		elf_file_range.start = round_to_page_down((uintptr_t)payload_header, page_size);
-		elf_file_range.end = round_to_page_up((uintptr_t)payload_header + payload_header->offset + payload_header->compressed_size, page_size);
-		if (sys_munmap((void*)elf_file_range.start, elf_file_range.end - elf_file_range.start) < 0)
+	if (elf && elf->file_header) {
+		range.start = round_to_page_down((uintptr_t)elf->file_header, page_size);
+		range.end = round_to_page_up((uintptr_t)elf->file_header + elf->file_sz, page_size);
+		if (sys_munmap((void*)range.start, range.end - range.start) < 0)
 			error = -1;
 	}
 
-	return (error);
+	if (payload && payload->data) {
+		range.start = round_to_page_down((uintptr_t)payload->data - payload->header.offset, page_size);
+		range.end = round_to_page_up((uintptr_t)payload->data + payload->header.compressed_size, page_size);
+		if (sys_munmap((void*)range.start, range.end - range.start) < 0)
+			error = -1;
+	}
+
+	if (error)
+		return (bad_munmap);
+
+	return (ok);
 }
 
 _Noreturn void	execute_packed_elf(uintptr_t *stack)
 {
 	stub_info_t			stub = {0};						/* Refers THIS binary (packed elf loaded by the kernel)  */
-	elf_info_t			elf = {0};						/* Refers to the ORIGINAL elf encrypted inside THIS binary as a payload */
+	packed_payload_t	payload = {0};					/* Refers to the packed ORGINAL elf loaded inside THIS binary as a payload*/
+	elf_info_t			elf = {0};						/* Refers to the unpacked ORIGINAL elf*/
 	elf_info_t			interp = {0};					/* Refers to the interpreter of the ORIGINAL elf */
 	Elf64_auxv_t		*auxv;							/* Will contain the begin of the auxv table */
-	payload_header_t	*payload_header;				/* Will contain the address of the ORIGINAL elf payload header */
 	char				interp_name[PATH_MAX] = {0};	/* Will contain the string of the ORIGINAL elf interpreter's name */
 	void				*entry = NULL;					/* Will contain the entry address of the ORIGINAL elf or its interpreter's */
 	size_t				page_size;						/* Will contain the page size for this execution */
-	int					retval;
+	stub_error_t		error;
 	Elf64_auxv_t		*auxv_field;
 
 	print_start_msg();
 
 	if (!stack)
 		fail(bad_stack);
+	/* argc */
+	if (stack[0] < 2)
+	    fail(bad_key);
 
 	auxv = find_auxv_start(stack);
 
@@ -91,38 +105,42 @@ _Noreturn void	execute_packed_elf(uintptr_t *stack)
 		fail(bad_auxv);
 	page_size = auxv_field->a_un.a_val;
 
-	retval = init_stub_info(&stub, auxv);
-	if (retval != ok)
-		fail(retval);
+	error = init_stub_info(&stub, auxv);
+	if (error != ok)
+		fail(error);
 
-	payload_header = find_elf_payload_header(&stub);
-	if (payload_header == NULL)
-		fail(payload_not_found);
+	error = extract_payload(&payload, &stub);
+	if (error != ok)
+		fail(error);
 
-	elf.file_header = decrypt_payload(payload_header);
-	if (elf.file_header == NULL)
-		fail(corrupted);
-	elf.file_sz = payload_header->decompressed_size;
-	elf.file_phdr = (Elf64_Phdr *)((unsigned char*)elf.file_header +
-					elf.file_header->e_phoff);
+	/* We assume argv[1] is the key */
+	error = convert_arg_to_key((char*)stack[2], payload.key);
+	if (error != ok)
+		fail(error);
+
+	error = unpack_payload(&payload, &elf);
+	if (error != ok)
+		fail(error);
 
 	if (elf.file_header->e_type == ET_EXEC)
-		retval = map_ET_EXEC(&elf, page_size);
+		error = map_ET_EXEC(&elf, page_size);
 	else if (elf.file_header->e_type == ET_DYN)
-		retval = map_ET_DYN(&elf, page_size);
+		error = map_ET_DYN(&elf, page_size);
 	else
 		fail(bad_e_type);
 
-	if (retval < 0)
-		fail(bad_load);
+	if (error != ok)
+		fail(error);
 
-	if (find_interpreter(interp_name, &elf) < 0)
-		fail(bad_interp);
+	error = find_interpreter(interp_name, &elf);
+	if (error != ok)
+		fail(error);
 
 	/* This stub assumes that interpreter is a valid ELF */
 	if (interp_name[0] != '\0') {
-		if (load_interpreter(&interp, interp_name, page_size) < 0)
-			fail(bad_interp);
+		error = load_interpreter(&interp, interp_name, page_size);
+		if (error != ok)
+			fail(error);
 		entry = (void*)(interp.file_header->e_entry + interp.load_bias);
 	}
 	else
@@ -131,11 +149,17 @@ _Noreturn void	execute_packed_elf(uintptr_t *stack)
 
 	/* We need to update auxv data to make it match the original elf configuration.
 	It will be used by the interpreter to set the elf up */
-	if (fix_auxv(auxv, &elf, &interp) < 0)
-		fail(bad_auxv);
+	error = fix_auxv(auxv, &elf, &interp);
+	if (error != ok)
+		fail(error);
 
-	if (munmap_files(&interp, payload_header, page_size) < 0)
-		fail(bad_munmap);
+	error = update_stack_args(stack, auxv);
+	if (error != ok)
+		fail(error);
+
+	error = munmap_files(&interp, &elf, &payload, page_size);
+	if (error != ok)
+		fail(error);
 
 	/* We jump to the loaded interepreter or directly to the decrypted elf entry */
 	jump_to_with_stack(entry, stack);

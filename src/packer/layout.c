@@ -2,7 +2,7 @@
 #include <sys/mman.h>
 #include "../common/elf_range.h"
 #include "../common/page.h"
-#include "../common/payload.h"
+#include "payload.h"
 #include "../ft/libft.h"
 
 #define OUTPUT_PHNUM 4
@@ -140,7 +140,7 @@ static void	init_gnu_stack_segment(Elf64_Phdr *gnu_stack_segment, const Elf64_Eh
 	}
 }
 
-error_t	init_output_headers(elf_layout_t *output, const mapped_file_t *target, const Elf64_Shdr *packer_stub_section, uint64_t page_size)
+error_t	init_output_headers(elf_layout_t *output, const mapped_file_t *target, const packed_payload_t *payload, const Elf64_Shdr *packer_stub_section, uint64_t page_size)
 {
 	off_t		file_off;
 	size_t		prev_mem_end;
@@ -168,7 +168,7 @@ error_t	init_output_headers(elf_layout_t *output, const mapped_file_t *target, c
 	file_off = output->stub_segment.p_offset + output->stub_segment.p_filesz;
 	vaddr = round_to_page_up(prev_mem_end, page_size) + (file_off % page_size);
 	error = init_payload_segment(&output->payload_segment,
-		(size_t)target->st.st_size, file_off, vaddr, page_size);
+		payload->header.compressed_size, file_off, vaddr, page_size);
 	if (error != ok)
 		return (error);
 

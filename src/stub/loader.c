@@ -7,7 +7,7 @@
 #include "syscalls/syscalls.h"
 
 /* Copies file data and clears the BSS space in the last copied page */
-static int	fill_segment(const Elf64_Phdr *segment, const elf_info_t *elf, uintptr_t seg_start, size_t page_size)
+static stub_error_t	fill_segment(const Elf64_Phdr *segment, const elf_info_t *elf, uintptr_t seg_start, size_t page_size)
 {
 	uintptr_t	page_start;		/* First page containing file data */
 	uintptr_t	data_end_addr;	/* Runtime address right after the segment's file data */
@@ -18,7 +18,7 @@ static int	fill_segment(const Elf64_Phdr *segment, const elf_info_t *elf, uintpt
 	data_end_addr = seg_start + segment->p_filesz;
 	file_off = segment->p_offset - (seg_start - page_start);
 	if (file_off >= elf->file_sz)
-		return (-1);
+		return (corrupted);
 
 	/* We copy the file pages covering the segment's data to emulate
 	a file-backed mapping, including bytes outside the segment within
@@ -34,24 +34,24 @@ static int	fill_segment(const Elf64_Phdr *segment, const elf_info_t *elf, uintpt
 	if (segment->p_memsz > segment->p_filesz)
 		memset((void*)data_end_addr, 0, round_to_page_up(data_end_addr, page_size) - data_end_addr);
 
-	return (0);
+	return (ok);
 }
 
 /* Maps the segment's pages, then initializes its file data and BSS */
-static void	*map_segment(const Elf64_Phdr *segment, const elf_info_t *elf, size_t page_size, int mmap_flag)
+static stub_error_t	map_segment(const Elf64_Phdr *segment, const elf_info_t *elf, size_t page_size, int mmap_flag)
 {
 	uintptr_t		seg_start;
 	mapping_range_t	pages;
 
 	if (!elf || !elf->file_header)
-		return (NULL);
+		return (unexpected);
 
 	seg_start = elf->load_bias + segment->p_vaddr;
 	pages.start = round_to_page_down(seg_start, page_size);
 	pages.end = round_to_page_up(seg_start + segment->p_memsz, page_size);
 
 	if (segment->p_memsz == 0)
-		return ((void*)pages.start);
+		return (ok);
 
 	if ((intptr_t)sys_mmap(
 			(void*)pages.start,
@@ -61,21 +61,20 @@ static void	*map_segment(const Elf64_Phdr *segment, const elf_info_t *elf, size_
 			-1,
 			0
 		) < 0)
-		return (NULL);
+		return (bad_mmap);
 
 	/* If the segment is full BSS, we can return
 	as MAP_ANONYMOUS already "zeroed" the pages */
-	if (segment->p_filesz != 0
-		&& fill_segment(segment, elf, seg_start, page_size) < 0)
-		return (NULL);
+	if (segment->p_filesz != 0)
+		return (fill_segment(segment, elf, seg_start, page_size));
 
-	return ((void*)pages.start);
+	return (ok);
 }
 
 /* Apply permissions after all segments have been copied.
 For shared pages, the last PT_LOAD in program header order determines
 the final permissions */
-static int	apply_permissions(const elf_info_t *elf, size_t page_size)
+static stub_error_t	apply_permissions(const elf_info_t *elf, size_t page_size)
 {
 	Elf64_Phdr		*segment;
 	mapping_range_t	range;
@@ -83,7 +82,7 @@ static int	apply_permissions(const elf_info_t *elf, size_t page_size)
 	int				prot;
 
 	if (!elf || !elf->file_header || !elf->file_phdr || page_size == 0)
-		return (-1);
+		return (unexpected);
 
 	for (Elf64_Half i = 0; i < elf->file_header->e_phnum; i++) {
 		segment = &elf->file_phdr[i];
@@ -104,9 +103,9 @@ static int	apply_permissions(const elf_info_t *elf, size_t page_size)
 			prot |= PROT_EXEC;
 
 		if (sys_mprotect((void*)range.start, range.end - range.start, prot) < 0)
-			return (-1);
+			return (bad_mprotect);
 	}
-	return (0);
+	return (ok);
 }
 
 /* In order to find the actual address of the ORIGINAL ELF's program header
@@ -137,44 +136,48 @@ static uintptr_t find_phdr_addr(const elf_info_t *elf)
 
 /* Copies all PT_LOAD segments from the file image into the reserved memory,
 then applies their final page permissions. */
-static int	map_segments(elf_info_t *elf, size_t page_size)
+static stub_error_t	map_segments(elf_info_t *elf, size_t page_size)
 {
 	int	first_pt_load = 1;
+	stub_error_t	error;
 
 	if (!elf || !elf->file_header || !elf->file_phdr)
-		return (-1);
+		return (unexpected);
 
 	for (Elf64_Half i = 0; i < elf->file_header->e_phnum; i++) {
 		if (elf->file_phdr[i].p_type != PT_LOAD || !elf->file_phdr[i].p_memsz)
 			continue;
 		if (first_pt_load) {
 			/* First segment must not override another page */
-			if (map_segment(&elf->file_phdr[i], elf, page_size, MAP_FIXED_NOREPLACE) == NULL)
-				return (-1);
+			error = map_segment(&elf->file_phdr[i], elf, page_size, MAP_FIXED_NOREPLACE);
+			if (error != ok)
+				return (error);
 			first_pt_load = 0;
 		}
 		else {
 			/* Subsequent segments may overlap each other */
-			if (map_segment(&elf->file_phdr[i], elf, page_size, MAP_FIXED) == NULL)
-				return (-1);
+			error = map_segment(&elf->file_phdr[i], elf, page_size, MAP_FIXED);
+			if (error != ok)
+				return (error);
 		}
 	}
 
-	if (apply_permissions(elf, page_size) < 0)
-	    return (-1);
+	error = apply_permissions(elf, page_size);
+	if (error != ok)
+		return (error);
 
 	elf->mem_phdr = (Elf64_Phdr*)find_phdr_addr(elf);
 
-	return (0);
+	return (ok);
 }
 
 /* Same logic than map_ET_DYN() */
-int	map_ET_EXEC(elf_info_t *elf, size_t page_size)
+stub_error_t	map_ET_EXEC(elf_info_t *elf, size_t page_size)
 {
 	mapping_range_t	range;
 
 	if (!elf || !elf->file_header || !elf->file_phdr)
-		return (-1);
+		return (unexpected);
 
 	range = get_mapping_range(elf->file_phdr, elf->file_header->e_phnum, page_size);
 	if ((intptr_t)sys_mmap(
@@ -185,12 +188,12 @@ int	map_ET_EXEC(elf_info_t *elf, size_t page_size)
 			-1,
 			0
 		) < 0)
-		return (-1);
+		return (bad_mmap);
 
 	elf->load_bias = 0;
 
 	if (sys_munmap((void*)range.start, range.end - range.start) < 0)
-		return (-1);
+		return (bad_munmap);
 
 	return (map_segments(elf, page_size));
 }
@@ -218,14 +221,14 @@ static inline int reservation_size_overflows(mapping_range_t range, size_t align
 	return (0);
 }
 
-int	map_ET_DYN(elf_info_t *elf, size_t page_size)
+stub_error_t	map_ET_DYN(elf_info_t *elf, size_t page_size)
 {
 	mapping_range_t	range;
 	Elf64_Xword		alignment;
 	void			*raw_addr;
 
 	if (!elf || !elf->file_header || !elf->file_phdr)
-		return (-1);
+		return (unexpected);
 
 	/* ABI states that for each PT_LOAD with p_align > 1,
 	p_vaddr mod p_align == p_offset mod p_align. Packer
@@ -247,7 +250,7 @@ int	map_ET_DYN(elf_info_t *elf, size_t page_size)
 	range = get_mapping_range(elf->file_phdr, elf->file_header->e_phnum, page_size);
 
 	if (reservation_size_overflows(range, alignment))
-		return (-1);
+		return (bad_load);
 
 	/* mmap returns an address aligned to page_size. To satisfy p_align as well,
 	we reserve an extra "alignment" bytes. This lets us round up to the next
@@ -262,7 +265,7 @@ int	map_ET_DYN(elf_info_t *elf, size_t page_size)
 					0
 				);
 	if ((intptr_t)raw_addr < 0)
-		return (-1);
+		return (bad_mmap);
 
 	/* Now that we have the raw address (aligned to page_size), we can round up
 	to the next multiple of "alignment". However, range.start (the starting
@@ -274,7 +277,7 @@ int	map_ET_DYN(elf_info_t *elf, size_t page_size)
 
 	/* We can free the checking reservation */
 	if (sys_munmap(raw_addr, range.end - range.start + alignment) < 0)
-		return (-1);
+		return (bad_munmap);
 
 	return (map_segments(elf, page_size));
 }
