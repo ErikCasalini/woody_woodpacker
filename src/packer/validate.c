@@ -43,8 +43,8 @@ static error_t	check_header(const mapped_file_t *file)
 	if (header->e_ident[EI_OSABI] != ELFOSABI_SYSV
 		&& header->e_ident[EI_OSABI] != ELFOSABI_GNU)
 		return (bad_ident);
-	if (header->e_ident[EI_ABIVERSION] != 0)
-		return (bad_ident);
+	// if (header->e_ident[EI_ABIVERSION] != 0)
+	// 	return (bad_ident);
 	if (header->e_type != ET_EXEC && header->e_type != ET_DYN)
 		return (bad_type);
 	if (header->e_machine != EM_X86_64)
