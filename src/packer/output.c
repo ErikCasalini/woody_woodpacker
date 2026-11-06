@@ -76,8 +76,8 @@ error_t	fill_output_elf(int						output_fd,
 	if (written != (ssize_t)sizeof(payload_header_t))
 		return (write_error);
 
-	written = write(output_fd, payload->data, payload->header.compressed_size);
-	if (written != (ssize_t)payload->header.compressed_size)
+	written = write(output_fd, payload->data, payload->header.packed_size);
+	if (written != (ssize_t)payload->header.packed_size)
 		return (write_error);
 
 	return (ok);

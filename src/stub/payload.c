@@ -42,15 +42,20 @@ stub_error_t	extract_payload(packed_payload_t *payload, const stub_info_t *stub)
 			return (payload_not_found);
 	}
 
+	if (!payload_header->data_compressed
+    && payload_header->packed_size != payload_header->original_size)
+    return (corrupted);
+
 	if (payload_header->offset < sizeof(payload_header_t)
     || payload_header->offset > segment->p_filesz)
     	return (corrupted);
 
-	if (payload_header->compressed_size > segment->p_filesz - payload_header->offset)
+	if (payload_header->packed_size > segment->p_filesz - payload_header->offset)
     	return (corrupted);
 
-	payload->header.decompressed_size = payload_header->decompressed_size;
-	payload->header.compressed_size = payload_header->compressed_size;
+	payload->header.data_compressed = payload_header->data_compressed;
+	payload->header.original_size = payload_header->original_size;
+	payload->header.packed_size = payload_header->packed_size;
 	payload->header.offset = payload_header->offset;
 	payload->data = (uint8_t*)payload_header + payload_header->offset;
 
@@ -64,21 +69,25 @@ stub_error_t unpack_payload(packed_payload_t *payload, elf_info_t *elf)
 
   	/* Each packed ELF uses a unique key, so a fixed nonce is sufficient */
 	chacha20_crypt(payload->key, payload->nonce, 0, payload->data,
-  				payload->header.compressed_size);
+  				payload->header.packed_size);
 
-	map_addr = (intptr_t)sys_mmap(NULL, payload->header.decompressed_size,
+	map_addr = (intptr_t)sys_mmap(NULL, payload->header.original_size,
 						PROT_READ | PROT_WRITE,
 						MAP_PRIVATE | MAP_ANONYMOUS,
 						-1, 0);
 	if (map_addr < 0)
 		return (bad_mmap);
 
-	size = lzss_decompress(payload->data, payload->header.compressed_size,
-					(uint8_t*)map_addr, payload->header.decompressed_size);
-	if (size == LZSS_ERROR || size != payload->header.decompressed_size) {
-		sys_munmap((uint8_t*)map_addr, payload->header.decompressed_size);
-		return (bad_decompr);
+	if (payload->header.data_compressed) {
+		size = lzss_decompress(payload->data, payload->header.packed_size,
+						(uint8_t*)map_addr, payload->header.original_size);
+		if (size == LZSS_ERROR || size != payload->header.original_size) {
+			sys_munmap((uint8_t*)map_addr, payload->header.original_size);
+			return (bad_decompr);
+		}
 	}
+	else
+    	ft_memcpy((void*)map_addr, payload->data, payload->header.original_size);
 
 	elf->file_header = (Elf64_Ehdr*)map_addr;
 
@@ -87,11 +96,11 @@ stub_error_t unpack_payload(packed_payload_t *payload, elf_info_t *elf)
   	|| elf->file_header->e_ident[EI_MAG2] != ELFMAG2
   	|| elf->file_header->e_ident[EI_MAG3] != ELFMAG3) {
 		elf->file_header = NULL;
-		sys_munmap((uint8_t*)map_addr, payload->header.decompressed_size);
+		sys_munmap((uint8_t*)map_addr, payload->header.original_size);
 		return (corrupted);
 	  }
 
-	elf->file_sz = payload->header.decompressed_size;
+	elf->file_sz = payload->header.original_size;
 	elf->file_phdr = (Elf64_Phdr *)((unsigned char*)elf->file_header +
 					elf->file_header->e_phoff);
 

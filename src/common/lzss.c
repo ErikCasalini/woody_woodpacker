@@ -1,4 +1,5 @@
 #include "lzss.h"
+#include "../ft/libft.h"
 
 size_t	lzss_decompress(const uint8_t *src, size_t src_len,
 			uint8_t *dst, size_t dst_cap)
@@ -105,6 +106,21 @@ static uint32_t	find_match(const uint8_t *src, size_t src_len,
 	return (best_len);
 }
 
+static size_t	copy_uncompressed(const uint8_t *src, size_t src_len,
+			uint8_t *dst, size_t dst_cap)
+{
+	if (src_len > dst_cap)
+		return (LZSS_ERROR);
+	ft_memcpy(dst, src, src_len);
+	return (LZSS_ERROR);
+}
+
+/*
+** Returns compressed size on success, LZSS_ERROR otherwise.
+** On failure, src is copied to dst if both pointers are valid,
+** buffers do not overlap and dst_cap >= src_len.
+** Otherwise, no copy is guaranteed.
+*/
 size_t	lzss_compress(const uint8_t *src, size_t src_len,
 			uint8_t *dst, size_t dst_cap)
 {
@@ -114,7 +130,7 @@ size_t	lzss_compress(const uint8_t *src, size_t src_len,
 	int		bit;
 
 	if (src_len == 0)
-		return (0);
+		return (LZSS_ERROR);
 	if (src == NULL || dst == NULL)
 		return (LZSS_ERROR);
 	in = 0;
@@ -122,7 +138,7 @@ size_t	lzss_compress(const uint8_t *src, size_t src_len,
 	while (in < src_len)
 	{
 		if (out >= dst_cap)
-			return (LZSS_ERROR);
+			return (copy_uncompressed(src, src_len, dst, dst_cap));
 		flag_pos = out;		/* reserve the flag byte, filled in as we go */
 		dst[out++] = 0;
 		bit = 0;
@@ -135,8 +151,8 @@ size_t	lzss_compress(const uint8_t *src, size_t src_len,
 			length = find_match(src, src_len, in, &distance);
 			if (length >= LZSS_MIN_MATCH)
 			{
-				if (out + 2 > dst_cap)
-					return (LZSS_ERROR);
+				if (dst_cap - out < 2)
+					return (copy_uncompressed(src, src_len, dst, dst_cap));
 				/* mark this token as a match and pack distance+length */
 				dst[flag_pos] |= (uint8_t)(1 << bit);
 				dst[out++] = (uint8_t)((distance - 1) & 0xFF);
@@ -147,11 +163,13 @@ size_t	lzss_compress(const uint8_t *src, size_t src_len,
 			else
 			{
 				if (out >= dst_cap)
-					return (LZSS_ERROR);
+					return (copy_uncompressed(src, src_len, dst, dst_cap));
 				dst[out++] = src[in++];
 			}
 			bit++;
 		}
 	}
+	if (out >= src_len)
+		return (copy_uncompressed(src, src_len, dst, dst_cap));
 	return (out);
 }

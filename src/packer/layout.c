@@ -168,7 +168,7 @@ error_t	init_output_headers(elf_layout_t *output, const mapped_file_t *target, c
 	file_off = output->stub_segment.p_offset + output->stub_segment.p_filesz;
 	vaddr = round_to_page_up(prev_mem_end, page_size) + (file_off % page_size);
 	error = init_payload_segment(&output->payload_segment,
-		payload->header.compressed_size, file_off, vaddr, page_size);
+		payload->header.packed_size, file_off, vaddr, page_size);
 	if (error != ok)
 		return (error);
 
