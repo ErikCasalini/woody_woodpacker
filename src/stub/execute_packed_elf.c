@@ -66,7 +66,7 @@ static stub_error_t	munmap_files(elf_info_t *interp, elf_info_t *elf, packed_pay
 
 	if (payload && payload->data) {
 		range.start = round_to_page_down((uintptr_t)payload->data - payload->header.offset, page_size);
-		range.end = round_to_page_up((uintptr_t)payload->data + payload->header.compressed_size, page_size);
+		range.end = round_to_page_up((uintptr_t)payload->data + payload->header.packed_size, page_size);
 		if (sys_munmap((void*)range.start, range.end - range.start) < 0)
 			error = -1;
 	}
