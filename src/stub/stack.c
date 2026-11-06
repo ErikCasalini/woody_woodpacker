@@ -1,5 +1,4 @@
-#include "stack.h"
-#include <stddef.h>
+#include "exec_env.h"
 #include "../ft/libft.h"
 
 Elf64_auxv_t	*find_auxv_start(uintptr_t *stack)

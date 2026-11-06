@@ -1,5 +1,4 @@
 #include "loader.h"
-#include <stddef.h>
 #include <sys/mman.h>
 #include "../common/elf_range.h"
 #include "../common/page.h"

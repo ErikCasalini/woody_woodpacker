@@ -25,7 +25,7 @@ COMMON_SRC := src/common/elf_range.c \
 			  src/ft/ft_strlen.c
 
 STUB_SRC := src/stub/execute_packed_elf.c \
-			src/stub/stack.c \
+			src/stub/exec_env.c \
 			src/stub/interpreter.c \
 			src/stub/key.c \
 			src/stub/loader.c \

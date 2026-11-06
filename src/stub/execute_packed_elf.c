@@ -1,7 +1,7 @@
 #include <stddef.h>
 #include "../common/elf_range.h"
 #include "../common/page.h"
-#include "stack.h"
+#include "exec_env.h"
 #include "interpreter.h"
 #include "key.h"
 #include "jump_to_with_stack.h"
