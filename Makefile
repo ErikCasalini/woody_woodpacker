@@ -5,10 +5,10 @@ LINKER_SCRIPT := linker_script
 
 STUB_OBJ_DIR := stub_bin
 STUB := $(STUB_OBJ_DIR)/stub.elf
-STUB_CFLAGS := -Wall -Werror -Wextra -ffreestanding -fno-stack-protector -nostdlib -fPIE -MMD -g
+STUB_CFLAGS := -Wall -Werror -Wextra -ffreestanding -fno-stack-protector -fPIE -MMD -g
 # -Xassembler tels Clang to send the following option to the assembler tool
 STUB_ASFLAGS := -Xassembler --fatal-warnings
-STUB_LDFLAGS := -static --no-dynamic-linker -T $(LINKER_SCRIPT)
+STUB_LDFLAGS := -T $(LINKER_SCRIPT)
 
 PACKER_OBJ_DIR := packer_bin
 PACKER := woody_woodpacker
