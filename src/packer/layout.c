@@ -9,11 +9,11 @@
 #define OUTPUT_ALIGN 0x1000
 
 #ifndef LOWEST_VADDR
-# define LOWEST_VADDR 0x10000
+# define LOWEST_VADDR 0x0000000000010000ULL
 #endif
 
 #ifndef HIGHEST_VADDR
-# define HIGHEST_VADDR 0x00007fffffffefff
+# define HIGHEST_VADDR 0x00007fffffffefffULL
 #endif
 
 static void	init_header(Elf64_Ehdr *header, const Elf64_Ehdr *target_header)
@@ -41,21 +41,19 @@ static intptr_t	select_output_base_addr(const Elf64_Ehdr *target_file_data, size
 	if (!target_file_data || target_file_data->e_type == ET_DYN)
 		return (0);
 
-	/* If original ELF is ET_EXEC, we must chose absolute addresses
-	that will not collide with any of its PT_LOAD. Thus we calculate
-	the load range of the entire ELF, and we place the stub PT_LOADs
-	rigth before or right after it, depending of available addresses */
+	/* For ET_EXEC, the stub requires fixed addresses that must not collide
+ 	with the original PT_LOADs or with the heap initialized by the kernel.
+	Since for this type of ELFs the heap starts after the loaded image, we
+	determine the original ELF's load range and we place the stub PT_LOADs after
+	it. This way, the kernel will set the heap after the loaded stub :
+	low addr -> original segments -> stub segments -> heap -> stack -> high addr */
 	target_phdrs = (Elf64_Phdr*)((unsigned char*)target_file_data + target_file_data->e_phoff);
 	target_load_range = get_mapping_range(target_phdrs, target_file_data->e_phnum, page_size);
 
 	/* We assume that the lowest possible vaddr for a process is 0x10000
 	and the highest is 0x00007fffffffefff (47 bits) */
-	if (target_load_range.start > LOWEST_VADDR
-		&& output_memsz < target_load_range.start - LOWEST_VADDR)
-		return ((intptr_t)round_to_page_down(
-					target_load_range.start - output_memsz,
-					page_size
-				));
+	if (target_load_range.start < LOWEST_VADDR)
+		return (-1);
 	if (target_load_range.end < HIGHEST_VADDR
 		&& output_memsz < HIGHEST_VADDR - target_load_range.end)
 		return (target_load_range.end);
@@ -175,7 +173,7 @@ error_t	init_output_headers(elf_layout_t *output, const mapped_file_t *target, c
 	init_gnu_stack_segment(&output->gnu_stack_segment, target->data);
 
 	/* We calculate the total page space that our output ELF will require
-	(before the payload execution) */
+	(before the payload mapping) */
 	output_memsz = (size_t)round_to_page_up(
 								output->payload_segment.p_vaddr +
 								output->payload_segment.p_memsz,
