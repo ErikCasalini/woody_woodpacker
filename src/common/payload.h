@@ -9,7 +9,7 @@
 typedef struct payload_header_s
 {
 	unsigned char	magic[8];
-	int				data_compressed;
+	int				is_compressed;
 	Elf64_Xword		packed_size;
 	Elf64_Xword		original_size;
 	Elf64_Off		offset;				/* From the beginning of this segment */

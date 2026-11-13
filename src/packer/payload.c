@@ -36,7 +36,7 @@ error_t	pack_payload(packed_payload_t *payload, mapped_file_t *target)
 	if (packed_sz == LZSS_ERROR)
 		packed_sz = target->st.st_size;
 	else
-		payload->header.data_compressed = 1;
+		payload->header.is_compressed = 1;
 
 	chacha20_crypt(payload->key, payload->nonce, 0, payload->data, packed_sz);
 	init_payload_header(&payload->header, packed_sz, (size_t)target->st.st_size);

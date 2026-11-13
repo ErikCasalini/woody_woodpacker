@@ -42,7 +42,7 @@ stub_error_t	extract_payload(packed_payload_t *payload, const stub_info_t *stub)
 			return (payload_not_found);
 	}
 
-	if (!payload_header->data_compressed
+	if (!payload_header->is_compressed
     && payload_header->packed_size != payload_header->original_size)
     return (corrupted);
 
@@ -53,7 +53,7 @@ stub_error_t	extract_payload(packed_payload_t *payload, const stub_info_t *stub)
 	if (payload_header->packed_size > segment->p_filesz - payload_header->offset)
     	return (corrupted);
 
-	payload->header.data_compressed = payload_header->data_compressed;
+	payload->header.is_compressed = payload_header->is_compressed;
 	payload->header.original_size = payload_header->original_size;
 	payload->header.packed_size = payload_header->packed_size;
 	payload->header.offset = payload_header->offset;
@@ -78,7 +78,7 @@ stub_error_t unpack_payload(packed_payload_t *payload, elf_info_t *elf)
 	if (map_addr < 0)
 		return (bad_mmap);
 
-	if (payload->header.data_compressed) {
+	if (payload->header.is_compressed) {
 		size = lzss_decompress(payload->data, payload->header.packed_size,
 						(uint8_t*)map_addr, payload->header.original_size);
 		if (size == LZSS_ERROR || size != payload->header.original_size) {
