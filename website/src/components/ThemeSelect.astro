@@ -1,0 +1,54 @@
+---
+import { Icon } from '@astrojs/starlight/components';
+
+const t = Astro.locals.t;
+---
+
+<label class="woody-theme-picker">
+  <span class="sr-only">{t('themeSelect.accessibleLabel')}</span>
+  <span class="theme-icon" aria-hidden="true"><Icon name="setting" /></span>
+  <select autocomplete="off">
+    <option value="terminal" selected>Terminal</option>
+    <option value="dark">Cyberdream</option>
+    <option value="light">{t('themeSelect.light')}</option>
+    <option value="auto">{t('themeSelect.auto')}</option>
+  </select>
+</label>
+
+<style>
+  .woody-theme-picker {
+    position: relative;
+    display: flex;
+    align-items: center;
+    color: var(--sl-color-gray-2);
+  }
+
+  .theme-icon {
+    position: absolute;
+    inset-inline-start: 0.5rem;
+    display: flex;
+    pointer-events: none;
+  }
+
+  select {
+    appearance: none;
+    background-color: transparent;
+    border: 0;
+    color: inherit;
+    cursor: pointer;
+    font-size: var(--sl-text-sm);
+    min-block-size: 2.5rem;
+  }
+
+  option {
+    background-color: var(--sl-color-bg-nav);
+    color: var(--sl-color-gray-1);
+  }
+
+  @media (min-width: 50rem) {
+    select {
+      appearance: auto;
+      padding-inline-start: 1.75rem;
+    }
+  }
+</style>

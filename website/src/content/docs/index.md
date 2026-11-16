@@ -4,19 +4,19 @@ title: "Write-up : Packer ELF"
 
 Ceci est un projet d'étude visant a explorer la structure des executables et la manière dont Linux les execute.
 
-L'idée est de créer un simple packer pour ELF `x86_64` pour mettre en pratique les notions que j'ai pu apprendre en me documentant sur le format ELF et sur le fonctionnement du chargeur du kernel Linux.
+L'idée est de créer un simple *packer* pour ELF `x86_64` pour mettre en pratique les notions que j'ai pu apprendre en me documentant sur le format ELF et sur le fonctionnement du chargeur du kernel Linux.
 
 ### Qu'est ce qu'un packer ?
 
-Un packer est un outil qui transforme un fichier exécutable en chiffrant et/ou compressant son contenu, afin de réduire sa taille et/ou de compliquer son analyse, tout en préservant son comportement originel grâce à un mécanisme de dépaquetage.
+Un *packer* est un outil qui transforme un fichier exécutable en chiffrant et/ou compressant son contenu, afin de réduire sa taille et/ou de compliquer son analyse, tout en préservant son comportement originel grâce à un mécanisme de dépaquetage.
 
 ### Strategie de packing
 
-Beaucoup de stratégies existent, certaines très simples et d'autres plus complexes. Dans le cadre de ce projet, afin de réellement explorer toutes les notions impliqués dans le chargement et l'exécution d'un programme, nous nous intereserons a la methodologie employee par le packer open source [UPX](https://github.com/upx/upx).
+Beaucoup de stratégies existent, certaines très simples et d'autres plus complexes. Dans le cadre de ce projet, afin de réellement explorer toutes les notions impliqués dans le chargement et l'exécution d'un programme, nous nous intereserons a la methodologie employee par le *packer* open source [UPX](https://github.com/upx/upx).
 
 Cette strategie consiste sommairement en les etapes suivantes :
 
-- Le packer ouvre le fichier executable qu'il doit packer et le compresse.
+- Le *packer* ouvre le fichier executable qu'il doit *packer* et le compresse.
 - Il cree un nouveau fichier et insère cette data compressée à l'intérieur.
 - Il insère également du code exécutable (que nous appellerons *stub*), chargé de retrouver les données compressées, de les décompresser et de préparer l'exécution du programme original.
 
@@ -28,7 +28,7 @@ Lors de l'exécution, le point d'entrée pointera donc vers le *stub*. Celui-ci 
 
 L'objectif est ainsi de retrouver le comportement de l'exécutable original, tout en ayant profondément modifié la manière dont celui-ci est représenté sur le disque et chargé en mémoire.
 
-Dans notre implémentation, nous utiliserons à la fois la compression et le chiffrement des données du payload. Cependant, nous ne nous attarderons pas sur le fonctionnement de ces algorithmes, qui ne constituent pas le sujet principal de ce write-up.
+Dans notre implémentation, nous utiliserons à la fois la compression et le chiffrement des données du *payload*. Cependant, nous ne nous attarderons pas sur le fonctionnement de ces algorithmes, qui ne constituent pas le sujet principal de ce write-up.
 
 Nous nous concentrerons plutôt sur les mécanismes permettant de transformer un exécutable, de le restaurer en mémoire et de reproduire les opérations nécessaires à son chargement et à son exécution.
 
@@ -44,7 +44,7 @@ Mais cela peut paraître inquiétant lorsque nous développons un programme qui 
 
 Pour pallier ce problème (entre autres), les systèmes modernes utilisent un mécanisme appelé mémoire virtuelle.
 
-#### La mémoire virtuelle
+#### Les adresses virtuelles
 
 En vulgarisant on peut dire qu'une adresses virtuelle est simplement un "nombre/identifiant" servant a retrouver la bonne adresse physique. Sur les architectures `x86-64`, elles sont représentées sur 64 bits et sont comprises généralement dans une plage allant de `0x0` à `0x00007fffffffefff`. Les premières plages sont souvent interdites, et ces limites peuvent varier en fonction de la configuration du système).
 
@@ -66,7 +66,7 @@ Une page est simplemnt un "bloc de mémoire de taille fixe". Sur `x86-64`, ce bl
 
 > **Attention :** Ici, nous parlons de l'allocation de mémoire nécessaire à l'établissement du contexte d'exécution d'un processus, et non de l'allocation de mémoire de travail par le programme pendant son exécution (via `malloc()`, par exemple). Dans ce second cas, la mémoire demandée peut déjà être disponible dans une région précédemment réservée (le kernel n'alloue pas de nouvelles pages a chaque `malloc()`, la *heap* agit comme une sorte réserve de mémoire). Si ce n'est pas le cas, de nouvelles pages virtuelles peuvent être demandées au kernel.
 
-Donc pour préciser ce qui à été dit plus haut : les pages tables permettent de relier les pages virtuelles aux pages physiques. Pour simplifier, nous pouvons imaginer ces tables représentent un grand dictionnaire contenant des paires « *key/value* » :
+Donc pour préciser ce qui à été dit plus haut : les *pages tables* permettent de relier les pages virtuelles aux pages physiques. Pour simplifier, nous pouvons imaginer ces tables représentent un grand dictionnaire contenant des paires « *key/value* » :
 
 - **Key :** l'adresse de début d'une page virtuelle.
 - **Value :** l'adresse physique du *page frame* correspondant.
@@ -116,23 +116,23 @@ Un ELF peut représenter plusieurs choses. Les plus communes sont :
 
 #### Sections et Segments
 
-Lors de la compilation d'un programme, le compilateur et le *linker* organisent son contenu en différentes parties appelées sections. Chaque section contient de la data spécifique.
+Lors de la compilation d'un programme, le *compilateur* et le *linker* organisent son contenu en différentes parties appelées *sections*. Chaque *section* contient de la data spécifique.
 
-Quelques exemples classiques de sections générées automatiquement par presque tous les compilateurs/linkers :
+Quelques exemples classiques de *sections* générées automatiquement par presque tous les *compilateurs*/*linkers* :
 
 - "`.text`" contient généralement les instructions machine du programme.
 - "`.rodata`" contient généralement des données en lecture seule.
 - "`.data`" contient généralement des données initialisées qui peuvent être modifiées pendant l'exécution.
 
-> **NOTE :** Il n'y a aucune règle de nommage officielle pour les sections.
+> **NOTE :** Il n'y a aucune règle de nommage officielle pour les *sections*.
 
-Cette organisation par sections est très utile lors du *linking* de différents fichiers objets en un executable final. Le *linker* peut par exmple retrouver l'ensemble du code machine des tous les objets et l'unir ensemble dans le `.text` final de l'executable, ou encore exclure de l'ELF final des sections entieres qui ne servaient que pour la construction. De la même maniere, cette organisation peremet a différents outils Linux de parser rapidement et simplement les differents contenus d'un ELF (readelf, objdump...).
+Cette organisation par *sections* est très utile lors du *linking* de différents fichiers objets en un executable final. Le *linker* peut par exmple retrouver l'ensemble du code machine des tous les objets et l'unir ensemble dans le `.text` final de l'executable, ou encore exclure de l'ELF final des *sections* entieres qui ne servaient que pour la construction. De la même maniere, cette organisation peremet a différents outils Linux de parser rapidement et simplement les differents contenus d'un ELF (readelf, objdump...).
 
-Cependant, les sections ne servent que pour la construction et l'analyse d'un ELF. Le kernel n'a aucunement besoin de connaitre cette subdivision en sections. Tout ce qui lui importe c'est : quelles parties du fichier faut il charger en mémoire, et comment interpreter ces bouts de fichier chargés.
+Cependant, les *sections* ne servent que pour la construction et l'analyse d'un ELF. Le kernel n'a aucunement besoin de connaitre cette subdivision en *sections*. Tout ce qui lui importe c'est : quelles parties du fichier faut il charger en mémoire, et comment interpreter ces bouts de fichier chargés.
 
 Une autre manière d'organiser la data est donc nécessaire : les segments.
 
-Un segment est essentiellement une zone contigue de données. Ce terme est utilisé pour designer une zone du fichier ELF, le plus souvent en englobant une ou plusieurs sections. Lors du chargement, certains de ces segments sont traités par le système pour charger en mémoire les données nécessaires à l'execution. On utilise le terme segment pour designer aussi bien une zone de données d'un ELF sur disque, que la representation de cette zone en mémoire, lorsqu'elle est chargée.
+Un segment est essentiellement une zone contigue de données. Ce terme est utilisé pour designer une zone du fichier ELF, le plus souvent en englobant une ou plusieurs *sections*. Lors du chargement, certains de ces segments sont traités par le système pour charger en mémoire les données nécessaires à l'execution. On utilise le terme segment pour designer aussi bien une zone de données d'un ELF sur disque, que la representation de cette zone en mémoire, lorsqu'elle est chargée.
 
 #### Organisation de la structure ELF
 
@@ -160,7 +160,7 @@ Nous pouvons distinguer 4 éléments principaux :
   } Elf64_Ehdr;
   ```
 
-  Il s'agit d'une structure de taille fixe située au tout début du fichier. Il contient les caractéristiques générales de l'ELF, comme son architecture, son type, l'adresse de la première instruction qui sera exécutée ou encore la position de la Section Header Table et de la Program Header Table. C'est en quelque sorte le point de départ permettant d'interpréter le reste du fichier.
+  Il s'agit d'une structure de taille fixe située au tout début du fichier. Il contient les caractéristiques générales de l'ELF, comme son architecture, son type, l'adresse de la première instruction qui sera exécutée ou encore la position de la *Section Header Table* et de la *Program Header Table*. C'est en quelque sorte le point de départ permettant d'interpréter le reste du fichier.
 
 - **PROGRAM HEADER TABLE**
 
@@ -178,17 +178,17 @@ Nous pouvons distinguer 4 éléments principaux :
   } Elf64_Phdr;
   ```
 
-  Il s'agit d'un tableau de structures appellées Program Header. Un Program Header contient des informations destinées a être lues par le chargeur du système : l'adresse de chargement de certains segments, leurs permissions, leur zone de chargement... Chaque Program Header peut désigner un segment (donc une zone contigue de l'ELF), un segment chargeable (donc un segment qui doit être chargé en mémoire), ou de la métadonée de chargement qui ne représente aucune zone de l'ELF, simplement des informations sur comment gérer le chargement et l'execution. Bien que ce ne soit pas une règle officielle, la Program Header Table se situe souvent avant la Data, juste après le Header. Il existe de nombreux types (`p_type`) de Program Headers, mais dans le cadre de ce write-up nous nous interesserons seulement aux suivants :
+  Il s'agit d'un tableau de structures appellées *Program Header*. Un *Program Header* contient des informations destinées a être lues par le chargeur du système : l'adresse de chargement de certains segments, leurs permissions, leur zone de chargement... Chaque *Program Header* peut désigner un segment (donc une zone contigue de l'ELF), un segment chargeable (donc un segment qui doit être chargé en mémoire), ou de la métadonée de chargement qui ne représente aucune zone de l'ELF, simplement des informations sur comment gérer le chargement et l'execution. Bien que ce ne soit pas une règle officielle, la *Program Header Table* se situe souvent avant la Data, juste après le *Header*. Il existe de nombreux types (`p_type`) de *Program Headers*, mais dans le cadre de ce write-up nous nous interesserons seulement aux suivants :
 
   - **`PT_LOAD` :** Le plus important. Cet *header* decrit un segment de l'ELF qui sera chargé en mémoire. A noter qu'il est très fréquent que ce type de segment couvre plusieurs autres segments plus petis. Le premier segment `PT_LOAD` d'un ELF comprend souvent au moins le segment `PT_PHDR` et `PT_INTERP`.
-  - **`PT_PHDR` :** Decrit un segment qui contient l'entièreté des entrées de la Program Header Table.
+  - **`PT_PHDR` :** Decrit un segment qui contient l'entièreté des entrées de la *Program Header Table*.
   - **`PT_INTERP` :** Decrit un segment qui contient le nom absolu d'un exectuable ELF qui jouera le role d'interpreteur (cette notion sera expliquée plus tard).
-  - **`PT_DYNAMIC` :** Decrit un segment qui contient la section `.dynamic`. Cette section fournit des informations nécessaires à la liaison dynamique. Elle permet notamment de savoir quelles bibliothèques partagées (.so) doivent être chargées et contient les informations pour retrouver les adresse mémoire des fonctions qu'elles exportent. Nous nous interesserons un peu plus en détails a cette fonction plus tard.
-  - **`PT_GNU_STACK` :** Ce Program Header ne decrit aucun segment, il renseigne seulement un *flag* qui indique si la *stack* qu'un ELF va avoir lors de son execution doit être executable ou non (si ce n'est pas clair, ça le sera plus tard).
+  - **`PT_DYNAMIC` :** Decrit un segment qui contient la *section* `.dynamic`. Cette *section* fournit des informations nécessaires à la liaison dynamique. Elle permet notamment de savoir quelles bibliothèques partagées (.so) doivent être chargées et contient les informations pour retrouver les adresse mémoire des fonctions qu'elles exportent. Nous nous interesserons un peu plus en détails a cette fonction plus tard.
+  - **`PT_GNU_STACK` :** Ce *Program Header* ne decrit aucun segment, il renseigne seulement un *flag* qui indique si la *stack* qu'un ELF va avoir lors de son execution doit être executable ou non (si ce n'est pas clair, ça le sera plus tard).
 
 - **DATA**
 
-  C'est le contenu du fichier : instructions machine, constantes, variables initialisées, informations de symboles, etc. La majorité est rangée par sections, qui peuvent a leur tour être regroupées par segments.
+  C'est le contenu du fichier : instructions machine, constantes, variables initialisées, informations de symboles, etc. La majorité est rangée par *sections*, qui peuvent a leur tour être regroupées par segments.
 
 - **SECTION HEADER TABLE**
 
@@ -208,19 +208,19 @@ Nous pouvons distinguer 4 éléments principaux :
   } Elf64_Shdr;
   ```
 
-  Il s'agit d'un tableau de structures appellées Section Header. Un Section Header décrit une section: sa position, sa taille, son type et différentes propriétés. Cette table n'est pas utilisée par le chargeur du système, et peut donc être absente sans poser de problèmes d'execution. La premiere entrée de cette table est toujours nulle. Le plus souvent, la Section Header Table est placée après la Data, à la fin du fichier, mais ce n'est pas une obligation.
+  Il s'agit d'un tableau de structures appellées *Section Header*. Un *Section Header* décrit une *section*: sa position, sa taille, son type et différentes propriétés. Cette table n'est pas utilisée par le chargeur du système, et peut donc être absente sans poser de problèmes d'execution. La premiere entrée de cette table est toujours nulle. Le plus souvent, la *Section Header Table* est placée après la Data, à la fin du fichier, mais ce n'est pas une obligation.
 
 ![](../../assets/images/4a6e2f92e2c294d8f02dc65b170f7b13a1a282be.jpg)
 
-> **NOTE :** On remarque que le Header et la Program Header Table font partie d'un segment sans pour autant faire partie d'une section.
+> **NOTE :** On remarque que le *Header* et la *Program Header Table* font partie d'un segment sans pour autant faire partie d'une *section*.
 
-Ce qu'il faut retenir ici est que les Sections Headers et Program Headers se partagent globalement la meme donnée. Ce sont simplement des structures qui subdivisent l'ELF de maniere differente. Cela permet deux lectures differentes, une qui sert a executer l'ELF et l'autre qui sert a le construire.
+Ce qu'il faut retenir ici est que les *Sections Headers* et *Program Headers* se partagent globalement la meme donnée. Ce sont simplement des structures qui subdivisent l'ELF de maniere differente. Cela permet deux lectures differentes, une qui sert a executer l'ELF et l'autre qui sert a le construire.
 
-Nous allons maintenant entrer un peu plus dans les details d'un Prgoram Header.
+Nous allons maintenant entrer un peu plus dans les details d'un Prgoram *Header*.
 
 #### Program Header
 
-Lorsqu'on utilise `readelf -lW` pour afficher la Program Header Table, on obtient quelque chose comme ça :
+Lorsqu'on utilise `readelf -lW` pour afficher la *Program Header Table*, on obtient quelque chose comme ça :
 
 ```
 $ readelf -lW ./elf
@@ -265,7 +265,7 @@ Program Headers:
 
 Exliquons brièvement chaqu'un des champs:
 
-- **`p_type` :** Indique le type de du Program Header, comme `PT_LOAD`, `PT_PHDR`, `PT_INTERP`... Les differents types sont consultables ici [linux/elf.h](https://github.com/torvalds/linux/blob/master/include/uapi/linux/elf.h). D'autres types existent pour d'autres architecture, mais dans le cadre de ce projet nous utilierons ce *header* comme référence.
+- **`p_type` :** Indique le type de du *Program Header*, comme `PT_LOAD`, `PT_PHDR`, `PT_INTERP`... Les differents types sont consultables ici [linux/elf.h](https://github.com/torvalds/linux/blob/master/include/uapi/linux/elf.h). D'autres types existent pour d'autres architecture, mais dans le cadre de ce projet nous utilierons ce *header* comme référence.
 
 - **`p_offset` :** Indique à quel *offset* du fichier se trouve le debut de la zone de données couverte par le segment.
 
@@ -279,25 +279,25 @@ Exliquons brièvement chaqu'un des champs:
 
   > **NOTE :** Lorsque `p_memsz` est supérieur à `p_filesz` pour un segment `PT_LOAD`, l'espace supplémentaire en mémoire est initialisé à zéro. C'est notamment le cas des données non initialisées (`.bss`). Cette technique évite de stocker inutilement dans le fichier des octets dont on sait qu'ils devront être initialisés à zéro. Memsz ne peut pas être inférieur a filesz.
 
-- **`p_flags` :** Pour les segments `PT_LOAD`, indique les permissions mémoire demandées lors du chargement (read/write/execute). Ces permissions s'appliquent aux pages mémoire couvrant le segment et peuvent ensuite être modifiées, notamment avec mprotect(). Durant le runtime, une operation a une adresse a l'intérieur d'une page qui ne possède pas les permissions correspondantes se verra refusée par le kernel (qui enverra un *segfault* au processus). Pour d'autres types de Program Headers, ces *flags* peuvent avoir une signification différente (comme `PT_GNU_STACK`), ou être simplmement ignorés (comme `PT_PHDR`, `PT_INTERP`, `PT_DYNAMIC`...).
+- **`p_flags` :** Pour les segments `PT_LOAD`, indique les permissions mémoire demandées lors du chargement (read/write/execute). Ces permissions s'appliquent aux pages mémoire couvrant le segment et peuvent ensuite être modifiées, notamment avec mprotect(). Durant le runtime, une operation a une adresse a l'intérieur d'une page qui ne possède pas les permissions correspondantes se verra refusée par le kernel (qui enverra un *segfault* au processus). Pour d'autres types de *Program Headers*, ces *flags* peuvent avoir une signification différente (comme `PT_GNU_STACK`), ou être simplmement ignorés (comme `PT_PHDR`, `PT_INTERP`, `PT_DYNAMIC`...).
 
 - **`p_align` :** Indique la contrainte d'alignement du segment dans le fichier et en mémoire. Nous reviendrons sur son fonctionnement lors des détails sur l'implémentation du *stub*.
 
 Quelques exemples pour s'assurer que tout soit clair :
 
-- `ProgramHeader[0]` est de type `PT_PHDR`. On sait donc qu'il decrit un segment qui va contenir toutes les entrées de la Program Header Table. Le segment commence au `0x40ème` bytes du fichier, et occupe `0x2d8` bytes. Dans l'image finale chargée en mémoire, ce segment sera à l'adresse virtuelle `0x400040`, et aura la même taille que dans le fichier (`0x2d8`). Ici, bien que le *flag* `R` soit set, celui-ci n'a aucun impact sur les permissions mémoire, car ce Program Header ne provoque pas lui-même de mapping. Ses données sont néanmoins présentes en mémoire puisqu'elles sont englobées dans un segment `PT_LOAD`.
+- `ProgramHeader[0]` est de type `PT_PHDR`. On sait donc qu'il decrit un segment qui va contenir toutes les entrées de la *Program Header Table*. Le segment commence au `0x40ème` bytes du fichier, et occupe `0x2d8` bytes. Dans l'image finale chargée en mémoire, ce segment sera à l'adresse virtuelle `0x400040`, et aura la même taille que dans le fichier (`0x2d8`). Ici, bien que le *flag* `R` soit set, celui-ci n'a aucun impact sur les permissions mémoire, car ce *Program Header* ne provoque pas lui-même de mapping. Ses données sont néanmoins présentes en mémoire puisqu'elles sont englobées dans un segment `PT_LOAD`.
 
-- `ProgramHeader[2]` est de type `PT_LOAD`. On sait que ce segment va être chargé en mémoire. Il comprend l'intervalle `[0x00-0x910)` du fichier ELF. On voit donc qu'il englobe notamment le Header de l'ELF et les segments `PT_PHDR` et `PT_INTERP`. En mémoire il se trouvera à l'addrese `0x400000`, et aura la même taille que dans le fichier. Ici le *flag* `R` est appliqué lors du mapping comme permission de base du segment (ces permissions peuvent ensuite être modifiées avec `mprotect`).
+- `ProgramHeader[2]` est de type `PT_LOAD`. On sait que ce segment va être chargé en mémoire. Il comprend l'intervalle `[0x00-0x910)` du fichier ELF. On voit donc qu'il englobe notamment le *Header* de l'ELF et les segments `PT_PHDR` et `PT_INTERP`. En mémoire il se trouvera à l'addrese `0x400000`, et aura la même taille que dans le fichier. Ici le *flag* `R` est appliqué lors du mapping comme permission de base du segment (ces permissions peuvent ensuite être modifiées avec `mprotect`).
 
-- `ProgramHeader[5]` a la particularité d'avoir un memsz supérieur a son filesz, on sait donc que ce segment en mémoire sera plus grand que le segment dans le fichier, et que l'espace supplémentaire sera initialisé a `0` (bss).
+- `ProgramHeader[5]` a la particularité d'avoir un memsz supérieur a son filesz, on sait donc que ce segment en mémoire sera plus grand que le segment dans le fichier, et que l'espace supplémentaire sera initialisé a `0` (*bss*).
 
-- `ProgramHeader[11]` est de type `PT_GNU_STACK`. Ce type de Program Header ne decrit pas un segment, mais sert a indiquer au kernel quelles la mémoire représentant la Stack du processus (qui est egalement un espace memoire attribué par le kernel au demarrage d'un processus, nous y reviendrons) doit être executable ou non. Ici rien n'est donc chargé, le champ `p_flags` est utilisé pour renseigner cette information via le champ `p_flags` les autres champs sont ignorés.
+- `ProgramHeader[11]` est de type `PT_GNU_STACK`. Ce type de *Program Header* ne decrit pas un segment, mais sert a indiquer au kernel quelles la mémoire représentant la *Stack* du processus (qui est egalement un espace memoire attribué par le kernel au demarrage d'un processus, nous y reviendrons) doit être executable ou non. Ici rien n'est donc chargé, le champ `p_flags` est utilisé pour renseigner cette information via le champ `p_flags` les autres champs sont ignorés.
 
 Nous avons desormais toutes les briques necessaires pour comprendre comment le système charge et execute un ELF.
 
 ### Chargement d'un ELF
 
-Lorsqu'un processus appelle `execve()` pour exécuter un fichier ELF, le kernel doit effectuer plusieurs opérations d'initialisation. Nous détaillerons les principales étapes dans cette section, mais l'ordre dans lequel le kernel les effectue n'est pas forcément identique à l'ordre dans lequel nous les aborderons. 
+Lorsqu'un processus appelle `execve()` pour exécuter un fichier ELF, le kernel doit effectuer plusieurs opérations d'initialisation. Nous détaillerons les principales étapes dans cette *section*, mais l'ordre dans lequel le kernel les effectue n'est pas forcément identique à l'ordre dans lequel nous les aborderons.
 
 #### Mapping des Segments
 
@@ -305,7 +305,7 @@ Pour charger les segments `PT_LOAD`, le kernel doit créer des mappings mémoire
 
 Pour réaliser ces opérations, Linux utilise les mécanismes de mapping mémoire, également accessibles aux programmes utilisateurs grâce à l'appel système `mmap()`.
 
-`mmap()` permet notamment de créer deux types de mappings : les mappings anonymes et les mappings de fichier.
+`mmap()` permet notamment de créer deux types de mappings : les mappings *anonymes* et les mappings de fichier.
 
 - **Mapping anonyme :**  Permet de réserver une région de mémoire virtuelle qui n'est associée à aucun fichier. Son contenu initial est constitué de zéros. La taille de la région effectivement mappée est arrondie à un multiple de la taille des pages.
 
@@ -335,13 +335,13 @@ Avec un `p_filesz` de `0xe10`, les données de ce segment se terminent à l'adre
 
 Il existe également deux cas particuliers :
 
-- **Lorsque** `p_memsz > p_filesz` **:** le kernel initialise à zéro l'espace supplémentaire appartenant au segment. Il commence par remplacer par des zéros les éventuels octets supplémentaires du fichier présents après le segment, dans la dernière page mappée. Si nécessaire, il complète ensuite cette région avec des pages anonymes initialisées à zéro (segment 3).
+- **Lorsque** `p_memsz > p_filesz` **:** le kernel initialise à zéro l'espace supplémentaire appartenant au segment. Il commence par remplacer par des zéros les éventuels octets supplémentaires du fichier présents après le segment, dans la dernière page mappée. Si nécessaire, il complète ensuite cette région avec des pages *anonymes* initialisées à zéro (segment 3).
 
 - **Lorsque le mapping atteint EOF :** les octets situés après la fin du fichier, dans la dernière page du mapping, sont automatiquement remplis de zéros (segment 4).
 
 Enfin, les permissions définies par `p_flags` s'appliquent aux pages mappées, y compris aux octets du fichier chargés en supplément.
 
-Le schéma suivant illustre ces différents cas, en distinguant les données appartenant aux segments, les octets supplémentaires du fichier chargés à cause de l'alignement des pages et les régions de mémoire initialisées à zéro (bss).
+Le schéma suivant illustre ces différents cas, en distinguant les données appartenant aux segments, les octets supplémentaires du fichier chargés à cause de l'alignement des pages et les régions de mémoire initialisées à zéro (*bss*).
 
 ![](../../assets/images/fc461c7aab9b2ba4ff9bc930e3621c86a5958d7c.jpg)
 
@@ -351,7 +351,7 @@ Avant de de continuer avec les étapes suivantes de l'execution, il convient d'i
 
 #### PIE et PDE
 
-**Position Dependent Executable (PDE ou Non-PIE) :** Depuis le debut, nos exemples se réfèrent à ce type d'executable. Un PDE est conçu pour être chargé à des adresses virtuelles précises. Chaque `PT_LOAD` spécifie l'adresse à laquelle il doit être chargé, et si l'adresse du premier `PT_LOAD` n'est pas disponible (déja occupée) l'execution échoue. Les ELF PDE sont de type `ET_EXEC`,  indiqué dans le champ `e_type` de l'ELF Header.
+**Position Dependent Executable (PDE ou Non-PIE) :** Depuis le debut, nos exemples se réfèrent à ce type d'executable. Un PDE est conçu pour être chargé à des adresses virtuelles précises. Chaque `PT_LOAD` spécifie l'adresse à laquelle il doit être chargé, et si l'adresse du premier `PT_LOAD` n'est pas disponible (déja occupée) l'execution échoue. Les ELF PDE sont de type `ET_EXEC`,  indiqué dans le champ `e_type` de l'*ELF Header*.
 
 **Position Independent Executable (PIE) :** Ce type d'executable n'a aucune dépendance d'adresses spécifiques. Ce qui signifie qu'il peut être chargé et executé à n'importe quelles adresses virtuelles valides.
 
@@ -361,7 +361,7 @@ Lors du chargement d'un exécutable `ET_DYN`, le kernel doit déterminer un *loa
 
 Si l'*ASLR* est activé, ce *load bias* est obtenu aléatoirement (dans une limite de plages considérées comme valides), ce qui rend les adresses réelles de chargement différentes entre deux executions.
 
-Les ELF PIE sont de type `ET_DYN` au même titre que les bibliothèques partagées. Beaucoup de compilateurs modernes choisissent ce type d'ELF par défault lors des compilations.
+Les ELF PIE sont de type `ET_DYN` au même titre que les bibliothèques partagées. Beaucoup de *compilateurs* modernes choisissent ce type d'ELF par défault lors des compilations.
 
 **Exemple :**
 
@@ -387,7 +387,7 @@ Les mappings `mmap()` classiques sont généralement placés dans une région si
 
 Si l'*ASLR* est activé, l'emplacement de la *stack* est randomisé.
 
-Contrairement aux segments `PT_LOAD`, cette région ne correspond à aucune portion du fichier ELF. Il s'agit d'une région de mémoire anonyme, dont les pages physiques sont allouées selon les besoins.
+Contrairement aux segments `PT_LOAD`, cette région ne correspond à aucune portion du fichier ELF. Il s'agit d'une région de mémoire *anonyme*, dont les pages physiques sont allouées selon les besoins.
 
 Le kernel alloue ainsi les premières pages nécessaires pour y placer les informations de démarrage du programme. La *stack* pourra ensuite s'étendre vers les adresses inférieures, dans les limites autorisées, à mesure que le programme utilisera davantage de mémoire.
 
@@ -446,7 +446,7 @@ Exemple illustratif, le contenu est susceptible d'évoluer avec le temps.
 
 Comme nous avons l'habitude de le voir, en haut de la *stack* (adresse la plus basse) nous avons `argc`, suivi du tableau des `argvs`, et du tableau des `envps`. 
 
-Nous voyons cependant qu'après`envp` il y a une liste de structures de type `Elf64_auxv_t`, défini ainsi dans l'header [elf/elf.h](https://github.com/bminor/glibc/blob/master/elf/elf.h)  :
+Nous voyons cependant qu'après`envp` il y a une liste de structures de type `Elf64_auxv_t`, défini ainsi dans l'*header* [elf/elf.h](https://github.com/bminor/glibc/blob/master/elf/elf.h)  :
 
 ```c
 typedef struct
@@ -471,15 +471,15 @@ Lors de la préparation de l'environnement d'exécution, le kernel construit cet
 
 L'objectif de l'*Auxiliary Vector* est de permettre au kernel de transmettre au programme certaines informations sur son environnement d'exécution, sans que celui-ci ait besoin d'effectuer des appels système pour les obtenir.
 
-Ces informations concernent aussi bien les caractéristiques du système que les détails du chargement de l'exécutable lui-même. Par exemple, `AT_PAGESZ` indique la taille des pages mémoire du système, tandis que `AT_PHDR` contient l'adresse mémoire de la Program Header Table de l'exécutable.
+Ces informations concernent aussi bien les caractéristiques du système que les détails du chargement de l'exécutable lui-même. Par exemple, `AT_PAGESZ` indique la taille des pages mémoire du système, tandis que `AT_PHDR` contient l'adresse mémoire de la *Program Header Table* de l'exécutable.
 
-Nous reviendrons sur certains des champs de l'*Auxiliary Vector* lorsque nous entrerons dans les détails de l'implémentation du packer, mais nous n'approfondirons pas d'avantage le sujet (pour plus d'infos : [getauxval() and the auxiliary vector](https://lwn.net/Articles/519085/)).
+Nous reviendrons sur certains des champs de l'*Auxiliary Vector* lorsque nous entrerons dans les détails de l'implémentation du *packer*, mais nous n'approfondirons pas d'avantage le sujet (pour plus d'infos : [getauxval() and the auxiliary vector](https://lwn.net/Articles/519085/)).
 
 ##### Heap
 
 Le kernel détermine également l'adresse de départ de la *heap*, une région mémoire destinée aux allocations dynamiques.
 
-Pour cela, il se base généralement sur la fin du segment `PT_LOAD` situé à l'adresse mémoire la plus haute (BSS inclu).
+Pour cela, il se base généralement sur la fin du segment `PT_LOAD` situé à l'adresse mémoire la plus haute (*BSS* inclu).
 
 > **NOTE :** Pour les ELF de type `ET_DYN` sans *interpreter*, le kernel considère qu'il peut s'agir d'un programme chargé d'effectuer lui-même des mappings mémoire. Il peut donc placer le début de la *heap* à une adresse inférieure à celles des segments `PT_LOAD`, afin de laisser davantage de place à sa croissance sans risquer de collision avec ces futurs mappings.
 
@@ -487,7 +487,7 @@ Cette adresse peut ensuite être décalée aléatoirement si l'*ASLR* est activ�
 
 Contrairement à la *stack*, la *heap* s'étend vers les adresses supérieures, notamment lorsque le programme demande davantage de mémoire avec l'appel système `brk()`.
 
-Il faut cependant noter que toutes les allocations dynamiques n'utilisent pas nécessairement cette région. Par exemple, `malloc()` peut également utiliser des mappings anonymes `mmap()`.
+Il faut cependant noter que toutes les allocations dynamiques n'utilisent pas nécessairement cette région. Par exemple, `malloc()` peut également utiliser des mappings *anonymes* `mmap()`.
 
 ##### Registres
 
@@ -499,7 +499,7 @@ Sur une architecture x86-64, il initialise notamment :
 
 - `RSP` (*Stack Pointer*) : avec l'adresse du sommet initial de la *stack*.
 
-Il est important de comprendre que chaque thread possède son propre état de registres. Lors d'un changement de contexte, le kernel peut sauvegarder cet état afin de le restaurer lorsque le thread reprend son exécution.
+Il est important de comprendre que chaque *thread* possède son propre état de registres. Lors d'un changement de contexte, le kernel peut sauvegarder cet état afin de le restaurer lorsque le *thread* reprend son exécution.
 
 Ainsi, plusieurs programmes peuvent utiliser les mêmes registres physiques du CPU sans perdre leurs valeurs respectives.
 
@@ -511,7 +511,7 @@ Cependant, **charger un programme en mémoire ne signifie pas nécessairement qu
 
 Prenons un exemple simple : un programme C utilisant la fonction `printf()`.
 
-Cette fonction est généralement fournie par une bibliothèque externe, la `libc`, dont le code n'est pas directement intégré à notre exécutable.
+Cette fonction est généralement fournie par une bibliothèque externe, la *libc*, dont le code n'est pas directement intégré à notre exécutable.
 
 Pour que notre programme puisse utiliser cette fonction, il faut donc que cette bibliothèque soit également chargée en mémoire, et que le programme puisse retrouver l'adresse de la fonction `printf()`.
 
@@ -561,7 +561,7 @@ Ainsi, dans le cas d'un exécutable utilisant un interpréteur, **le premier cod
 
 À l'inverse, lorsqu'aucun interpréteur n'est spécifié, le kernel transfère directement le contrôle au point d'entrée de l'exécutable.
 
-Nous n'entrerons pas dans les détails des mechanismes de *relocation*, *dynamic linking* ainsi que les autres opérations effectuées par l'*interpreter*. Il est cependant important de comprendre leur existence, car ils vont influencer directement les choix d'implémentation de notre packer.
+Nous n'entrerons pas dans les détails des mechanismes de *relocation*, *dynamic linking* ainsi que les autres opérations effectuées par l'*interpreter*. Il est cependant important de comprendre leur existence, car ils vont influencer directement les choix d'implémentation de notre *packer*.
 
 Un dernier point intéressant à noter est que l'*interpreter* ne possède pas lui-même d'*interpreter* (pas de segment `PT_INTERP`).
 
@@ -571,7 +571,7 @@ Il est donc conçu pour pouvoir démarrer de manière autonome, sans dépendre d
 
 ### Stratégie
 
-Une approche courante pour packer un ELF consiste à chiffrer uniquement ses segments executables, puis d'injecter un *stub* dans l'une de ces régions disposant d'assez de place inutilisée (à la place du padding). Il suffit alots de modifier son point d'entrée (`e_entry`) pour que ce *stub* soit exécuté avant le programme original. Le *stub* viendrait alors trouver le début des segment chiffrés en mémoire, les dechifrer et jump à l'adresse du `e_entry` original.
+Une approche courante pour *packer* un ELF consiste à chiffrer uniquement ses segments executables, puis d'injecter un *stub* dans l'une de ces régions disposant d'assez de place inutilisée (à la place du padding). Il suffit alots de modifier son point d'entrée (`e_entry`) pour que ce *stub* soit exécuté avant le programme original. Le *stub* viendrait alors trouver le début des segment chiffrés en mémoire, les dechifrer et jump à l'adresse du `e_entry` original.
 
 > **NOTE :** La technique consitant a injecter du code dans la zone de padding d'un segment executable est appelée *code caving*.
 
@@ -591,7 +591,7 @@ Cependant, cette technique comporte son lot d'inconvénients :
 
   Si ces régions ont été chiffrées, l'*interpreter* risque donc de tenter de les lire, de les modifier ou de les exécuter avant que notre *stub* ait eu l'occasion de les déchiffrer. Cela nous oblige à conserver certaines régions en clair ou à mettre en place des mécanismes supplémentaires pour garantir le bon déroulement du chargement.
 
-Comme expliqué dans l'introduction, notre stratégie s'inspire des packer modernes comme [UPX](https://github.com/upx/upx), qui viennent pallier a ces problèmes.
+Comme expliqué dans l'introduction, notre stratégie s'inspire des *packer* modernes comme [UPX](https://github.com/upx/upx), qui viennent pallier a ces problèmes.
 
 Plutôt que d'injecter simplement un *stub* dans l'exécutable original, nous construisons un nouvel ELF contenant notre *stub* ainsi que l'exécutable original sous forme de données chiffrées et compressées.
 
@@ -599,15 +599,15 @@ L'ELF packé sera donc un executable très simple qui aura comme code machine ex
 
 Le *stub* se chargera de trouver et de décompresser/déchifrer l'ELF et d'effectuter toutes les étapes de chargement expliquées dans la partie précédente (presque) de la même manière que l'aurait fait le kernel Linux.
 
-Puisque l'ELF packé sera écrit "à la main" par notre packer, générer toute la structure de *relocations* et de liens dynamiques sans l'aide d'un *linker* serait trop complexe. Pour cause, notre *stub* ne possèdera pas d'*interpreter* et l'`entry_point` de l'ELF packé sera la première instruction du *stub*. Ceci implique donc que le code du *stub* devra être indépendant de toute "aide" supplémentaire fournie par un *interpreter*.
+Puisque l'ELF packé sera écrit "à la main" par notre *packer*, générer toute la structure de *relocations* et de liens dynamiques sans l'aide d'un *linker* serait trop complexe. Pour cause, notre *stub* ne possèdera pas d'*interpreter* et l'`entry_point` de l'ELF packé sera la première instruction du *stub*. Ceci implique donc que le code du *stub* devra être indépendant de toute "aide" supplémentaire fournie par un *interpreter*.
 
 Cette approche est considérablement plus complexe à implémenter, puisqu'elle nécessite de comprendre en profondeur certains mécanismes et choix du kernel. C'est cependant précisément cet aspect qui m'a poussé à la privilégier, afin d'approfondir ma compréhension du fonctionnement de Linux.
 
 ### Format de packing
 
-Avant de nous interesser au *stub* (qui fait le gros du travail), il convient de nous attarder sur le format de l'ELF packé produit par le packer.
+Avant de nous interesser au *stub* (qui fait le gros du travail), il convient de nous attarder sur le format de l'ELF packé produit par le *packer*.
 
-Voici ce que nous obtenons en inspectant le contenu d'un ELF packé par notre packer :
+Voici ce que nous obtenons en inspectant le contenu d'un ELF packé par notre *packer* :
 
 ```
 $ readelf -aW ./packed
@@ -656,19 +656,19 @@ No version information found in this file.
 
 Nous constatons que les seules informations présentes sont le *ELF Header*, 4 *Program Headers* et le contenu des segments qu'ils decrivent.
 
-Le format que notre packer garanti est le suivant :
+Le format que notre *packer* garanti est le suivant :
 
 - **L'ELF packé conserve le type de l’exécutable original : `ET_EXEC` ou `ET_DYN`**.
 
 - **Les trois segments chargeables ont une taille mémoire égale à leur taille dans le fichier.** Leurs contenus se suivent sans padding dans le fichier. Leurs adresses virtuelles sont calculées pour que chaque segment ait ses propres pages mémoire distinctes avec leurs permissions spécifiques (pas de chevauchement de segments).
 
-- **Le premier `PT_LOAD` contient l’ELF Header et l’intégralité de la Program Header Table.** Il commence à l’offset `0` et les deux éléments se suivent sans padding. Le stub peut ainsi retrouver son *ELF Header* en soustrayant `sizeof(Elf64_Ehdr)` à l'adresse de contenue dans `AT_PHDR` de `auxv`.
+- **Le premier `PT_LOAD` contient l’ELF Header et l’intégralité de la Program Header Table.** Il commence à l’*offset* `0` et les deux éléments se suivent sans padding. Le *stub* peut ainsi retrouver son *ELF Header* en soustrayant `sizeof(Elf64_Ehdr)` à l'adresse de contenue dans `AT_PHDR` de `auxv`.
 
-- **Le deuxième `PT_LOAD` contient les instructions et les constantes du stub.** Le point d’entrée de l’ELF packé correspond au début de ce segment, où se trouve le code d’entrée du stub.
+- **Le deuxième `PT_LOAD` contient les instructions et les constantes du stub.** Le point d’entrée de l’ELF packé correspond au début de ce segment, où se trouve le code d’entrée du *stub*.
 
-- **Le troisième et dernier `PT_LOAD` contient le payload.** Ce segment contient l'entièreté de l'ELF original compressé et chiffré. Le stub recherche le dernier `PT_LOAD` de la table pour le localiser.
+- **Le troisième et dernier `PT_LOAD` contient le payload.** Ce segment contient l'entièreté de l'ELF original compressé et chiffré. Le *stub* recherche le dernier `PT_LOAD` de la table pour le localiser.
 
-- **Le segment du payload commence par un header non chiffré de type `payload_header_t`.** Celui-ci commence par un magic `WOODY`et contient un *flag* indiquant si le payload est compressé, la taille des données packées, la taille du fichier original et l’offset des données depuis le début du segment (pour que le stub trouve le debut de l'ELF original apres le `payload_header_t`).
+- **Le segment du payload commence par un header non chiffré de type `payload_header_t`.** Celui-ci commence par un magic `WOODY`et contient un *flag* indiquant si le *payload* est compressé, la taille des données packées, la taille du fichier original et l’*offset* des données depuis le début du segment (pour que le *stub* trouve le debut de l'ELF original apres le `payload_header_t`).
 
   ```c
   typedef struct payload_header_s
@@ -681,15 +681,15 @@ Le format que notre packer garanti est le suivant :
   } payload_header_t;
   ```
 
-- **La dernière entrée est un `PT_GNU_STACK`.** Le packer copie les informations de celui de l’ELF original lorsqu’il existe. Sinon, il utilise une stack déclarée en lecture et écriture, sans permission d’exécution.
+- **La dernière entrée est un `PT_GNU_STACK`.** Le *packer* copie les informations de celui de l’ELF original lorsqu’il existe. Sinon, il utilise une *stack* déclarée en lecture et écriture, sans permission d’exécution.
 
-- **Pour un ELF packé `ET_DYN`, le premier `PT_LOAD` commence à l’adresse virtuelle `0`.** L’adresse mémoire de son ELF Header correspond donc au *load bias*. 
+- **Pour un ELF packé `ET_DYN`, le premier `PT_LOAD` commence à l’adresse virtuelle `0`.** L’adresse mémoire de son *ELF Header* correspond donc au *load bias*.
 
 - **Pour un `ET_EXEC`, le packer choisit des adresses fixes situées après la plage occupée par les segments de l’ELF original**. Ainsi, lors du chargement de ce dernier, nous avons la garantie qu'aucun des mapping n'ira écraser un segment du *stub* (la *heap* sera donc placée par le kernel apres les segments du *stub*).
 
-- **L’ELF packé ne possède aucun `PT_INTERP`.** Le stub démarre de manière autonome, sans *libc* ni *interpreter* chargé pour lui par le kernel. Il se charge ensuite de retrouver et de charger l’éventuel *interpreter* de l’ELF original.
+- **L’ELF packé ne possède aucun `PT_INTERP`.** Le *stub* démarre de manière autonome, sans *libc* ni *interpreter* chargé pour lui par le kernel. Il se charge ensuite de retrouver et de charger l’éventuel *interpreter* de l’ELF original.
 
-- **Le premier argument attendu par l'ELF packé est la clé de chiffrement.** Celle-ci est sous la forme de 64 chiffres hexadécimaux précédés de `0x` ou `0X`. Le stub se chargera de décaler la stack d'un adresse vers les adresses basses pour supprimer cet argument avant l'execution de l'ELF original.
+- **Le premier argument attendu par l'ELF packé est la clé de chiffrement.** Celle-ci est sous la forme de 64 chiffres hexadécimaux précédés de `0x` ou `0X`. Le *stub* se chargera de décaler la *stack* d'un adresse vers les adresses basses pour supprimer cet argument avant l'execution de l'ELF original.
 
 ### Stub
 
@@ -719,7 +719,7 @@ Comme introduit précédemment, l'ELF packé ne disposera d'aucune structure uti
   >   movabs rax, 0x2500
   >   ```
   >
-  >   Si le kernel charge l'ELF avec un *load bias* de `0x70000000`, la chaîne se trouvera en réalité à l'adresse `0x70002500`. L'instruction continuera pourtant d'utiliser `0x2500`, puisqu'aucune relocation ne viendra corriger cette adresse.
+  >   Si le kernel charge l'ELF avec un *load bias* de `0x70000000`, la chaîne se trouvera en réalité à l'adresse `0x70002500`. L'instruction continuera pourtant d'utiliser `0x2500`, puisqu'aucune *relocation* ne viendra corriger cette adresse.
   >
   > - **Adressage relatif à RIP :** L'instruction contient un déplacement par rapport à l'adresse de l'instruction suivante.
   >
@@ -735,21 +735,21 @@ Comme introduit précédemment, l'ELF packé ne disposera d'aucune structure uti
 
 - **Les différentes sections contenant le code et les données du stub devront conserver leurs positions relatives.** Pour que l'adressage *RIP-relative* fonctionne correctement, les distances entre les instructions et leurs cibles devrons rester identiques après l'injection du *stub* dans le nouvel ELF, ainsi que lors de son chargement en mémoire.
 
-- **Une seule section.** Pour faciliter le point précédent, ainsi que la copie du *stub* vers un autre executable, nous linkerons l'executable final de manière à ce qu'il n'ait qu'une seule section (appelée `.stub`) contenant l'ensemble des ressources (code et data) nécessaires à l'éxecution. Ainsi, en déplaçant en bloc la section `.stub` toutes les distances entre les éléments qui la composent sera respectée. Ceci implique que tous les éléments de cette section devront partager les mêmes permissions mémoire. Par mesure de sécurité, nous limiterons ces permissions à la lecture (`PF_R`) et à l'exécution (`PF_X`) seules.
+- **Une seule section.** Pour faciliter le point précédent, ainsi que la copie du *stub* vers un autre executable, nous linkerons l'executable final de manière à ce qu'il n'ait qu'une seule *section* (appelée `.stub`) contenant l'ensemble des ressources (code et data) nécessaires à l'éxecution. Ainsi, en déplaçant en bloc la *section* `.stub` toutes les distances entre les éléments qui la composent sera respectée. Ceci implique que tous les éléments de cette *section* devront partager les mêmes permissions mémoire. Par mesure de sécurité, nous limiterons ces permissions à la lecture (`PF_R`) et à l'exécution (`PF_X`) seules.
 
-  Cette décision nous impose une contrainte supplémentaire : **nous ne pourrons pas utiliser de variables globales modifiables**. En effet, celles-ci nécessiteraient une permission d'écriture (`PF_W`) qui, puisque notre section contient également du code exécutable, rendrait cette région mémoire à la fois modifiable et exécutable. Les globales constantes préinitialisées (readonly) seront cependant utilisables.
+  Cette décision nous impose une contrainte supplémentaire : **nous ne pourrons pas utiliser de variables globales modifiables**. En effet, celles-ci nécessiteraient une permission d'écriture (`PF_W`) qui, puisque notre *section* contient également du code exécutable, rendrait cette région mémoire à la fois modifiable et exécutable. Les globales constantes préinitialisées (readonly) seront cependant utilisables.
 
   > **NOTE :** Les variables locales non-statiques (dans le scope d'une fonction) sont en général placées dans la *stack* au runtime (ou directement dans les registres). Elles ne sont donc pas "stockées" dans le fichier ELF ou dans un de ses segments en mémoire.
   >
-  > Les variables globales et statiques initialisées a une valeur différente de 0 (`int glob_var = 100`), sont quant à elles stockées directement dans l'ELF (en général dans la section `.data` ou `.rodata` si elles sont constantes). Lorsque l'ELF est chargé, les contenus de ces sections seront présents en mémoire dans les segments `PT_LOAD` avec les permissions correspondantes. Accéder à une telle variable revient donc à accéder à une donnée située dans l'un de ces segments.
+  > Les variables globales et statiques initialisées a une valeur différente de 0 (`int glob_var = 100`), sont quant à elles stockées directement dans l'ELF (en général dans la *section* `.data` ou `.rodata` si elles sont constantes). Lorsque l'ELF est chargé, les contenus de ces *sections* seront présents en mémoire dans les segments `PT_LOAD` avec les permissions correspondantes. Accéder à une telle variable revient donc à accéder à une donnée située dans l'un de ces segments.
   >
-  > Les variables globales et statiques non initialisées (ou initialisées a 0) sont en général placées dans le *bss*. Contrairement aux variables dans `.data`, celles-ci ne sont pas présentes dans le fichier. Elles seront présentes uniquement en mémoire dans l'espace bss du segment avec les permissions apporpriées (en général lecture et écriture).
+  > Les variables globales et statiques non initialisées (ou initialisées a 0) sont en général placées dans le *bss*. Contrairement aux variables dans `.data`, celles-ci ne sont pas présentes dans le fichier. Elles seront présentes uniquement en mémoire dans l'espace *bss* du segment avec les permissions apporpriées (en général lecture et écriture).
 
-- **Aucun environnement d'exécution C.** Lorsque nous compilons un programme C standard, le *compilateur* et le *linker* supposent implicitement certaines conventions. Par exemple, nous écrivons une fonction `main()` sans nous préoccuper de la manière dont elle sera appelée. En réalité, le *linker* intègre du code de démarrage (*C runtime*), dont le point d'entrée est généralement désigné par le symbole `_start`. Ce code prépare notamment le fonctionnement de la `libc`, initialise certaines structures internes, puis appelle notre fonction `main()`.
+- **Aucun environnement d'exécution C.** Lorsque nous compilons un programme C standard, le *compilateur* et le *linker* supposent implicitement certaines conventions. Par exemple, nous écrivons une fonction `main()` sans nous préoccuper de la manière dont elle sera appelée. En réalité, le *linker* intègre du code de démarrage (*C runtime*), dont le point d'entrée est généralement désigné par le symbole `_start`. Ce code prépare notamment le fonctionnement de la *libc*, initialise certaines structures internes, puis appelle notre fonction `main()`.
 
   Vu que nous voulons être totalement independants et maitriser notre `entry_point`, nous devons demander au *compilateur* et au *linker* de ne pas appliquer ces conventions implicites ni d'ajouter le code de démarrage habituel. Notre *stub* possédera donc son propre point d'entrée, sans passer par `main()`, et devra assurer lui-même les initialisations dont il dépend.
 
-  > **NOTE :** Nous voulons également récupérer l'adresse exacte du haut de la stack au moment ou le kernel execute notre ELF packé. Passer par `main()` ne nous permettrait pas de récupérer directement cette adresse, puisque le code de démarrage C aurait déjà modifié la pile. Nous expliqueront cette nécessité plus tard dans ce chapitre.
+  > **NOTE :** Nous voulons également récupérer l'adresse exacte du haut de la *stack* au moment ou le kernel execute notre ELF packé. Passer par `main()` ne nous permettrait pas de récupérer directement cette adresse, puisque le code de démarrage C aurait déjà modifié la pile. Nous expliqueront cette nécessité plus tard dans ce chapitre.
 
 Pour obtenir du code machine qui respecte tous ces points, nous avons principalement deux solutions :
 
@@ -763,59 +763,59 @@ Pour obtenir du code machine qui respecte tous ces points, nous avons principale
 
 ##### Quoi éviter
 
-Nous allons donc simplement coder notre stub en C.
+Nous allons donc simplement coder notre *stub* en C.
 
 Il faut toutefois faire attention à la manière dont nous écrivons ce code, pour éviter la génération de certaines incompatibilités. Heureusement ce n'est pas une très grosse contrainte. Dans notre cas, il y a surtout deux choses à éviter :
 
-- **Utiliser le bss.** Puisque notre méthode consiste a générer à la main l'ELF packé qui exécutera le *stub*, utiliser des variables présentes dans le *bss* impliquerait une gestion supplémentaire. En effet notre packer devrait générer des `PT_LOAD` qui prennent en compte l'espace nécessaire requis par le *bss* du *stub*. Nous devons donc éviter les variables susceptibles d'être placées dans le *bss* : **pas de globales ou statiques non initialisées ou initialisées à zéro**.
+- **Utiliser le bss.** Puisque notre méthode consiste a générer à la main l'ELF packé qui exécutera le *stub*, utiliser des variables présentes dans le *bss* impliquerait une gestion supplémentaire. En effet notre *packer* devrait générer des `PT_LOAD` qui prennent en compte l'espace nécessaire requis par le *bss* du *stub*. Nous devons donc éviter les variables susceptibles d'être placées dans le *bss* : **pas de globales ou statiques non initialisées ou initialisées à zéro**.
 
 - **Les pointeurs et tableaux de pointeurs globaux initialisés.** Prenons le cas d'un pointeur global `char *global_err = "Error\n"`. La chaîne littérale `"Error\n"` sera stockée dans l'ELF (généralement dans `.rodata`), et notre pointeur devra contenir son adresse en mémoire.
 
   Le problème est que cette adresse est stockée comme une valeur dans les données du programme, et non calculée relativement à `RIP`, ce qui nous empêche de déplacer notre *stub* sans risquer de rendre cette adresse invalide.
 
-  Il est toutefois possible d'utiliser des pointeurs locaux initialisés de cette manière. Dans ce cas, le compilateur peut générer une instruction qui calcule l'adresse de la chaîne littérale directement à l'exécution, grâce à l'adressage *RIP-relative*. Aucune adresse absolue n'a donc besoin d'être stockée dans notre *stub*.
+  Il est toutefois possible d'utiliser des pointeurs locaux initialisés de cette manière. Dans ce cas, le *compilateur* peut générer une instruction qui calcule l'adresse de la chaîne littérale directement à l'exécution, grâce à l'adressage *RIP-relative*. Aucune adresse absolue n'a donc besoin d'être stockée dans notre *stub*.
 
-  Nous pouvons également utiliser des tableaux de caractères globaux constants, comme `static const char error[] = "Error\n";`, puisque dans ce cas, contrairement à un pointeur, les caractères sont directement stockés dans le tableau, qui est lui-même constant et dont l'adresse (dans `.rodata`) peut être calculée en *RIP-relative*, sans nécessiter de relocation à l'exécution.
+  Nous pouvons également utiliser des tableaux de caractères globaux constants, comme `static const char error[] = "Error\n";`, puisque dans ce cas, contrairement à un pointeur, les caractères sont directement stockés dans le tableau, qui est lui-même constant et dont l'adresse (dans `.rodata`) peut être calculée en *RIP-relative*, sans nécessiter de *relocation* à l'exécution.
 
-Il existe potentiellement d'autres formes de code générant des *relocations* que je n'ai pas eu l'occasion de rencontrer. Un bon indice de compatibilité est que la commande `readelf -rW stub` n'affiche pas de relocations (attention, dans les fichiers `.o` il est normal d'en trouver). Cette commande ne nous garantit cependant pas que notre code ne dépende pas d'une adresse absolue encodée quelque part.
+Il existe potentiellement d'autres formes de code générant des *relocations* que je n'ai pas eu l'occasion de rencontrer. Un bon indice de compatibilité est que la commande `readelf -rW stub` n'affiche pas de *relocations* (attention, dans les fichiers `.o` il est normal d'en trouver). Cette commande ne nous garantit cependant pas que notre code ne dépende pas d'une adresse absolue encodée quelque part.
 
 ##### Compilation et Linking
 
-Une fois notre code en C/asm prèt, nous devons le transformer en une section indépendante qui pourra être copiée dans un autre ELF et qui contiendra tout le nécessaire pour être executée de manière autonome.
+Une fois notre code en C/asm prèt, nous devons le transformer en une *section* indépendante qui pourra être copiée dans un autre ELF et qui contiendra tout le nécessaire pour être executée de manière autonome.
 
-Pour cela, nous compilons les fichiers C et assemblons les fichiers assembleur du *stub*, puis nous réunissons les fichiers `.o` obtenus dans une seule section `.stub`.
+Pour cela, nous compilons les fichiers C et assemblons les fichiers assembleur du *stub*, puis nous réunissons les fichiers `.o` obtenus dans une seule *section* `.stub`.
 
-Pour compiler le code C, nous utilisons notamment les *flags* suivants (avec *Clang*) :
+Pour *compiler* le code C, nous utilisons notamment les *flags* suivants (avec *Clang*) :
 
-- `-ffreestanding`: Indique à Clang que notre *stub* suit ses propres conventions de démarrage. En particulier, que notre *stub* n'a pas une fonction `main` "spéciale". Il informe aussi le compilateur de ne pas compter sur le fait que la `libc` soit disponible. Sans cela, il pourrait tenter d'optimiser notre code en remplaçant certaines parties par des appels a des fonctions de la `libc` de manière implicite. 
+- `-ffreestanding`: Indique à *Clang* que notre *stub* suit ses propres conventions de démarrage. En particulier, que notre *stub* n'a pas une fonction `main` "spéciale". Il informe aussi le *compilateur* de ne pas compter sur le fait que la *libc* soit disponible. Sans cela, il pourrait tenter d'optimiser notre code en remplaçant certaines parties par des appels a des fonctions de la *libc* de manière implicite.
 
   > **NOTE :** Même en `freestanding`, *Clang* utilisera des appels a `memcpy`, `memmove` et `memset`, nous devrons donc nous assurer de fournir notre propre implementation de ces fonctions. Plus de détails [ici](https://clang.llvm.org/docs/UsersManual.html#freestanding-builds).
 
 - `-fPIE`:  Demande à *Clang* de générer du code indépendant de son adresse de chargement. C'est notament ce qui favorise les *RIP-relative*. Le *stub* pourra ainsi retrouver ses instructions et ses constantes même si nous le plaçons à une autre adresse.
 
-- `-fno-stack-protector`: Sans entrer trop dans les détails, *Clang* peut ajouter du code de protection contre les *stack overflows*, qui consiste a charger une valeur dans la stack a l'entrée des fonctions considérées vulnérables par le compilateur. Cette valeur est vérifiée au retour de la fonction et si elle a été corrompue, le code appelle une fonction fournie par la libc (`__stack_chk_fail`). Dans notre implémentation nous n'avons pas acces a cette fonction, et il faudrait initialiser manuellement cette valeur. Nous évitons donc que le compilateur n'ajoute ce code de protection a notre *stub*.
+- `-fno-stack-protector`: Sans entrer trop dans les détails, *Clang* peut ajouter du code de protection contre les *stack overflows*, qui consiste a charger une valeur dans la *stack* a l'entrée des fonctions considérées vulnérables par le *compilateur*. Cette valeur est vérifiée au retour de la fonction et si elle a été corrompue, le code appelle une fonction fournie par la *libc* (`__stack_chk_fail`). Dans notre implémentation nous n'avons pas acces a cette fonction, et il faudrait initialiser manuellement cette valeur. Nous évitons donc que le *compilateur* n'ajoute ce code de protection a notre *stub*.
 
-Après la compilation/assemblage nous utiliserons directement `ld` pour linker nos fichiers objet sans passer par *Clang*. En effet lorsque c'est *Clang* qui appelle le *linker* pour nous, il lui demande implicitment de lier des fichier objet par default, qui contiennent notament le *runtime C*, cité plus haut.
+Après la compilation/assemblage nous utiliserons directement `ld` pour *linker* nos fichiers objet sans passer par *Clang*. En effet lorsque c'est *Clang* qui appelle le *linker* pour nous, il lui demande implicitment de lier des fichier objet par default, qui contiennent notament le *runtime C*, cité plus haut.
 
-Pour créer notre section `.stub` nous utiliserons le *flag* `-T` pour spécifier un *linker script*, qui est un fichier qui indique au *linker* comment organiser le fichier de sortie. Il peut notamment fixer l’emplacement des sections, définir des symboles et choisir le point d’entrée. Plus d'infos ici [Using LD, the GNU linker - Linker Scripts](https://home.cs.colorado.edu/~main/cs1300/doc/gnu/ld_3.html).
+Pour créer notre *section* `.stub` nous utiliserons le *flag* `-T` pour spécifier un *linker script*, qui est un fichier qui indique au *linker* comment organiser le fichier de sortie. Il peut notamment fixer l’emplacement des *sections*, définir des symboles et choisir le point d’entrée. Plus d'infos ici [Using LD, the GNU linker - Linker Scripts](https://home.cs.colorado.edu/~main/cs1300/doc/gnu/ld_3.html).
 
 ###### Organisation des sections
 
-Avant de regarder notre *linker script*, il faut comprendre que **chaque fichier** `.o` **peut contenir plusieurs sections**, et que plusieurs fichiers `.o` peuvent contenir des sections portant le même nom.
+Avant de regarder notre *linker script*, il faut comprendre que **chaque fichier** `.o` **peut contenir plusieurs _sections_**, et que plusieurs fichiers `.o` peuvent contenir des *sections* portant le même nom.
 
-Par exemple, si nous compilons séparément deux fichiers C, `loader.c` et `utils.c`, nous obtiendrons deux fichiers objet, `loader.o` et `utils.o`. Chacun pourra contenir sa propre section `.text` (pour le code) et sa propre section `.rodata` (pour les constantes).
+Par exemple, si nous compilons séparément deux fichiers C, `loader.c` et `utils.c`, nous obtiendrons deux fichiers objet, `loader.o` et `utils.o`. Chacun pourra contenir sa propre *section* `.text` (pour le code) et sa propre *section* `.rodata` (pour les constantes).
 
-Le compilateur peut également créer des sections avec des noms plus spécifiques comme `.text.execute_packed_elf` ou `.text.decrypt_blob`. De même, certaines constantes ou chaînes de caractères peuvent être placées dans des sections comme `.rodata.str1.1`.
+Le *compilateur* peut également créer des *sections* avec des noms plus spécifiques comme `.text.execute_packed_elf` ou `.text.decrypt_blob`. De même, certaines constantes ou chaînes de caractères peuvent être placées dans des *sections* comme `.rodata.str1.1`.
 
-C'est pour cette raison que notre *linker script* devra prendre en compte à la fois les sections classiques (`.text`, `.rodata`) et leurs différentes variantes (`.text.*`, `.rodata.*`).
+C'est pour cette raison que notre *linker script* devra prendre en compte à la fois les *sections* classiques (`.text`, `.rodata`) et leurs différentes variantes (`.text.*`, `.rodata.*`).
 
 ###### Le point d'entrée du stub
 
-Il nous reste une particularité importante : **nous voulons que les premières instructions de notre section** `.stub` **correspondent au point d'entrée de notre code.**
+Il nous reste une particularité importante : **nous voulons que les premières instructions de notre _section_** `.stub` **correspondent au point d'entrée de notre code.**
 
-En effet, lorsque le packer copiera cette section dans le nouvel ELF, nous connaîtrons son adresse de chargement. En plaçant notre point d'entrée au tout début, cette adresse sera également celle de la première instruction à exécuter, et on n'aura pas la chercher à l'intérieur de toute la section.
+En effet, lorsque le *packer* copiera cette *section* dans le nouvel ELF, nous connaîtrons son adresse de chargement. En plaçant notre point d'entrée au tout début, cette adresse sera également celle de la première instruction à exécuter, et on n'aura pas la chercher à l'intérieur de toute la *section*.
 
-Pour cela, dans notre code assembleur, nous plaçons les instructions de démarrage dans une section que nous appellerons explicitement `.text.stub_entry` :
+Pour cela, dans notre code assembleur, nous plaçons les instructions de démarrage dans une *section* que nous appellerons explicitement `.text.stub_entry` :
 
 ```asm
 .section .text.stub_entry, "ax", @progbits
@@ -825,9 +825,9 @@ stub_entry:
     ; Instructions de démarrage du stub
 ```
 
-La directive `.section` indique à l'assembleur que les instructions suivantes doivent être placées dans cette section. Le nom `.text.stub_entry` est donc **un nom que nous avons choisi nous-mêmes**, et non une section spéciale créée automatiquement par l'assembleur.
+La directive `.section` indique à l'assembleur que les instructions suivantes doivent être placées dans cette *section*. Le nom `.text.stub_entry` est donc **un nom que nous avons choisi nous-mêmes**, et non une *section* spéciale créée automatiquement par l'assembleur.
 
-Nous pouvons ensuite demander au *linker* de placer cette section avant toutes les autres.
+Nous pouvons ensuite demander au *linker* de placer cette *section* avant toutes les autres.
 
 ###### Notre linker script
 
@@ -843,23 +843,23 @@ SECTIONS
 }
 ```
 
-La commande `SECTIONS` permet de définir comment les sections des fichiers objet seront organisées dans l'ELF final.
+La commande `SECTIONS` permet de définir comment les *sections* des fichiers objet seront organisées dans l'ELF final.
 
-Ici, nous demandons au *linker* de créer une section de sortie appelée `.stub`. Tout ce qui se trouve entre ses accolades sera réuni dans cette section, dans l'ordre indiqué.
+Ici, nous demandons au *linker* de créer une *section* de sortie appelée `.stub`. Tout ce qui se trouve entre ses accolades sera réuni dans cette *section*, dans l'ordre indiqué.
 
-Les expressions comme `*(.text .text.*)` servent à sélectionner les sections des fichiers objet. Le premier `*` signifie « tous les fichiers objet fournis au linker ». Les noms entre parenthèses indiquent quelles sections de ces fichiers nous voulons récupérer.
+Les expressions comme `*(.text .text.*)` servent à sélectionner les *sections* des fichiers objet. Le premier `*` signifie « tous les fichiers objet fournis au *linker* ». Les noms entre parenthèses indiquent quelles *sections* de ces fichiers nous voulons récupérer.
 
-Le second `*`, dans `.text.*`, est un caractère générique : il permet de sélectionner toutes les sections dont le nom commence par `.text.`, comme `.text.execute_packed_elf` ou `.text.decrypt_blob`.
+Le second `*`, dans `.text.*`, est un caractère générique : il permet de sélectionner toutes les *sections* dont le nom commence par `.text.`, comme `.text.execute_packed_elf` ou `.text.decrypt_blob`.
 
 **L'ordre de ces trois lignes est volontaire :**
 
-Nous commençons par `*(.text.stub_entry)`, afin que les instructions de démarrage soient placées au début de notre section `.stub`.
+Nous commençons par `*(.text.stub_entry)`, afin que les instructions de démarrage soient placées au début de notre *section* `.stub`.
 
-Ensuite, `*(.text .text.*)` récupère le reste du code de nos différents fichiers objet, qu'il soit placé dans des sections `.text` classiques ou dans des sections plus spécifiques. La section `.text.stub_entry` ne sera pas ajoutée une seconde fois, puisqu'elle a déjà été récupérée par la première ligne.
+Ensuite, `*(.text .text.*)` récupère le reste du code de nos différents fichiers objet, qu'il soit placé dans des *sections* `.text` classiques ou dans des *sections* plus spécifiques. La *section* `.text.stub_entry` ne sera pas ajoutée une seconde fois, puisqu'elle a déjà été récupérée par la première ligne.
 
 Enfin, `*(.rodata .rodata.*)` récupère les données constantes nécessaires à notre code, comme les chaînes de caractères utilisées pour la gestion des erreurs.
 
-**Nous obtenons donc une section** `.stub` **organisée de la manière suivante :**
+**Nous obtenons donc une _section_** `.stub` **organisée de la manière suivante :**
 
 ```text
 .stub
@@ -873,15 +873,15 @@ Enfin, `*(.rodata .rodata.*)` récupère les données constantes nécessaires à
 └── .rodata.*              ← Autres sections de données constantes
 ```
 
-Bienentendu, nous faisons le choix de n'inclure que les sections avec du contenu executable ou des données constantes, mais l'ELF produit contiendra également d'autres sections. Nos contraintes sur les variables globales citées plus haut servent notamment à ne pas avoir besoin d'inclure les sections `.data` dans `.stub` (car il faudrait alors que `.stub` soit chargé dans un segment avec toutes les permissions).
+Bienentendu, nous faisons le choix de n'inclure que les *sections* avec du contenu executable ou des données constantes, mais l'ELF produit contiendra également d'autres *sections*. Nos contraintes sur les variables globales citées plus haut servent notamment à ne pas avoir besoin d'inclure les *sections* `.data` dans `.stub` (car il faudrait alors que `.stub` soit chargé dans un segment avec toutes les permissions).
 
 > **NOTE :** Le *linker* peut également insérer quelques octets de padding a l'intérieur de `.stub` pour respecter leurs contraintes d'alignement.
 
-Nous avons ainsi regroupé les instructions et les constantes nécessaires dans une même section, en conservant leurs positions relatives.
+Nous avons ainsi regroupé les instructions et les constantes nécessaires dans une même *section*, en conservant leurs positions relatives.
 
 ###### Extraction de la section
 
-L'ELF obtenu après cette compilation (`stub.elf`), nous sert simplement de conteneur. En effet nous n'avons pas spécifé d'`entry_point`, et nous n'avons pas du tout pensé cet executable pour être executé indépendanment (l'executer causerait un *segfault*). Nous voulons simplement extraire la *section* `.stub` (visible avec `readelf -SW stub.elf`), pour l'intégrer directement au binaire du packer (nous y reviendrons dans la partie "Packer").
+L'ELF obtenu après cette compilation (`stub.elf`), nous sert simplement de conteneur. En effet nous n'avons pas spécifé d'`entry_point`, et nous n'avons pas du tout pensé cet executable pour être executé indépendanment (l'executer causerait un *segfault*). Nous voulons simplement extraire la *section* `.stub` (visible avec `readelf -SW stub.elf`), pour l'intégrer directement au binaire du *packer* (nous y reviendrons dans la partie "*Packer*").
 
 #### Fonctionnement du Stub
 
@@ -889,7 +889,7 @@ Nous disposons désormais d'un *stub* autonome, capable d'être exécuté indép
 
 Son objectif est de retrouver l'exécutable original, de le restaurer en mémoire et de préparer son environnement d'exécution, afin de pouvoir lui transférer le contrôle comme l'aurait fait le kernel.
 
-Pour ce faire, notre *stub* va devoir reproduire la pluspart des opérations que nous avons expliquées dans la partie "Rappels Théoriques". Cependant, il existe une différence importante avec le chargement classique d'un exécutable : **notre stub s'exécute à l'intérieur d'un processus qui a déjà été initialisé par Linux.**
+Pour ce faire, notre *stub* va devoir reproduire la pluspart des opérations que nous avons expliquées dans la partie "Rappels Théoriques". Cependant, il existe une différence importante avec le chargement classique d'un exécutable : **notre *stub* s'exécute à l'intérieur d'un processus qui a déjà été initialisé par Linux.**
 
 En effet, lorsque nous lançons l'ELF packé, le kernel prépare son environnement d'exécution : il charge les segments du *stub*, initialise la *stack*, prépare l'*Auxiliary Vector*, configure certains registres, etc.
 
@@ -915,7 +915,7 @@ Comme expliqué précedemment, notre *stub* a été compilé sans le code de dé
 
 Il nous faut donc créer notre propre point d'entrée.
 
-Nous pourrions parfaitement définir directement notre fonction C `execute_packed_elf()` comme point d'entrée de l'exécutable, et le kernel commencerait à exécuter les instructions machine générées par le compilateur pour cette fonction.
+Nous pourrions parfaitement définir directement notre fonction C `execute_packed_elf()` comme point d'entrée de l'exécutable, et le kernel commencerait à exécuter les instructions machine générées par le *compilateur* pour cette fonction.
 
 Cependant, nous avons besoin de récupérer la valeur exacte de `RSP` au moment où le kernel nous transfère le contrôle, car elle pointe vers le début de la *stack* initiale, contenant `argc`, `argv`, `envp` et `auxv`.
 
@@ -946,7 +946,7 @@ _Noreturn void execute_packed_elf(uintptr_t *stack)
 
 Le paramètre `stack` contient directement l'adresse du sommet initial de la pile.
 
-Nous pouvons ensuite écrire le reste de notre logique en C, sans nous soucier des modifications que le compilateur pourrait apporter à `RSP`.
+Nous pouvons ensuite écrire le reste de notre logique en C, sans nous soucier des modifications que le *compilateur* pourrait apporter à `RSP`.
 
 L'instruction `ud2` sert de sécurité : elle provoque une exception si notre fonction devait retourner alors que ce comportement n'est pas prévu.
 
@@ -956,9 +956,9 @@ L'instruction `ud2` sert de sécurité : elle provoque une exception si notre fo
 
 N'ayant a disposition aucune librairie, la seule manière d'effectuer des *syscalls* comme `mmap()` ou`open()` est de passer par l'instruction assembler `syscall`. 
 
-Par soucis de longueur de ce write-up, nous n'expliquerons pas cette implémentation dans les détails. Il faut simplement retenir qu'une fonction assembler par *syscall* a été crée, et sera appelée avec les mêmes arguments qu'aurait demandé la fonction de la `libc` originelle.
+Par soucis de longueur de ce write-up, nous n'expliquerons pas cette implémentation dans les détails. Il faut simplement retenir qu'une fonction assembler par *syscall* a été crée, et sera appelée avec les mêmes arguments qu'aurait demandé la fonction de la *libc* originelle.
 
-> **NOTE :** Contrairement aux fonctions de la `libc`, nos wrappers ne renseignent pas `errno`. Sur cette architecture, un appel système échoué renvoie directement une valeur négative correspondant à `-errno` dans `RAX`. Il faut donc vérifier correctement ces valeurs de retour.
+> **NOTE :** Contrairement aux fonctions de la *libc*, nos wrappers ne renseignent pas `errno`. Sur cette architecture, un appel système échoué renvoie directement une valeur négative correspondant à `-errno` dans `RAX`. Il faut donc vérifier correctement ces valeurs de retour.
 
 Liste des *syscalls* custom :
 
@@ -998,7 +998,7 @@ Après avoir récupéré `RSP`,  notre *stub* doit retrouver les données qu'il 
 
 Nous savons que l'ELF packé contient trois segments `PT_LOAD` :
 
-- Un segment contenant l'ELF Header et la Program Header Table.
+- Un segment contenant l'*ELF Header* et la *Program Header Table*.
 
 - Un segment contenant le code executable et les constantes du *stub*.
 
@@ -1032,7 +1032,7 @@ Comme nous l'avons vu précédemment, la *stack* initiale contient successivemen
 
 Puisque nous connaissons l'adresse de `argc`, nous pouvons parcourir cette structure pour retrouver le début de `auxv`.
 
-Notre fonction `find_auxv_start()` avance simplement a travers la stack jusqu'a passer le `NULL` de `envp`.
+Notre fonction `find_auxv_start()` avance simplement a travers la *stack* jusqu'a passer le `NULL` de `envp`.
 
 Nous pouvons ensuite parcourir les entrées de l'*Auxiliary Vector* jusqu'à trouver celle qui nous intéresse.
 
@@ -1072,7 +1072,7 @@ Pour notre ELF packé, deux cas sont donc possibles :
 
 - S'il est de type `ET_EXEC`: 
 
-  Les adresses indiquées dans les Program Headers sont déjà les adresses réelles de chargement.
+  Les adresses indiquées dans les *Program Headers* sont déjà les adresses réelles de chargement.
 
   Nous utilisons donc : 
 
@@ -1084,7 +1084,7 @@ Pour notre ELF packé, deux cas sont donc possibles :
 
   Nous avons imposé que son premier `PT_LOAD` possède un `p_vaddr` de `0`.
 
-  Puisque l'ELF Header se trouve au début de ce segment, son adresse mémoire correspond directement au *load bias* :
+  Puisque l'*ELF Header* se trouve au début de ce segment, son adresse mémoire correspond directement au *load bias* :
 
   ```c
   stub_load_bias = stub_header;
@@ -1102,7 +1102,7 @@ segment_addr = stub_load_bias + segment->p_vaddr;
 
 Nous devons ensuite retrouver le segment contenant l'exécutable original.
 
-Notre packer garantit que le *payload* se trouve dans le dernier `PT_LOAD` de la *Program Header Table*.
+Notre *packer* garantit que le *payload* se trouve dans le dernier `PT_LOAD` de la *Program Header Table*.
 
 Nous parcourons donc celle-ci depuis sa dernière entrée jusqu'à rencontrer un segment `PT_LOAD`.
 
@@ -1124,23 +1124,23 @@ Puisque notre pointeur `stack` référence directement `argc`, cet argument se t
 stack[2]
 ```
 
-Nous convertissons cette chaîne hexadécimale en une clé de 32 octets, puis nous l'utilisons pour déchiffrer le *payload* avec ChaCha20.
+Nous convertissons cette chaîne hexadécimale en une clé de 32 octets, puis nous l'utilisons pour déchiffrer le *payload* avec *ChaCha20*.
 
 Le déchiffrement est effectué directement dans le segment contenant le *payload*. C'est la raison pour laquelle nous avons donné la permission d'écriture à ce segment.
 
 Nous devons ensuite reconstruire le fichier ELF original.
 
-Pour cela, nous créons un mapping anonyme en lecture/écriture, suffisamment grand pour accueillir le fichier décompressé.
+Pour cela, nous créons un mapping *anonyme* en lecture/écriture, suffisamment grand pour accueillir le fichier décompressé.
 
-Si le *payload* avait été compressé, nous utilisons LZSS pour écrire les données décompressées dans cette région. Sinon, nous y copions simplement les données déchiffrées.
+Si le *payload* avait été compressé, nous utilisons *LZSS* pour écrire les données décompressées dans cette région. Sinon, nous y copions simplement les données déchiffrées.
 
 Nous obtenons ainsi **une copie complète du fichier ELF original en mémoire**.
 
 Il faut bien distinguer deux choses :
 
-- **La représentation du fichier :** notre région temporaire contient les octets de l'ELF tels qu'ils se trouvaient sur le disque, avec son ELF Header, ses Program Headers et ses données.
+- **La représentation du fichier :** notre région temporaire contient les octets de l'ELF tels qu'ils se trouvaient sur le disque, avec son *ELF Header*, ses *Program Headers* et ses données.
 
-- **La représentation du programme chargé :** c'est l'ensemble des segments `PT_LOAD` placés à leurs adresses d'exécution, avec leurs permissions et leur éventuel espace BSS.
+- **La représentation du programme chargé :** c'est l'ensemble des segments `PT_LOAD` placés à leurs adresses d'exécution, avec leurs permissions et leur éventuel espace *BSS*.
 
 Pour le moment, nous possédons uniquement la première représentation.
 
@@ -1174,7 +1174,7 @@ La manière de procéder dépend du type de l'exécutable original.
 
 Pour un `ET_EXEC`, nous n'avons pas le choix des adresses.
 
-Ses segments doivent être chargés aux adresses absolues indiquées dans leurs Program Headers.
+Ses segments doivent être chargés aux adresses absolues indiquées dans leurs *Program Headers*.
 
 Notre *load bias* sera donc égal à `0`.
 
@@ -1188,9 +1188,9 @@ Nous devons donc vérifier que l'espace nécessaire est disponible.
 
 Pour cela, notre fonction `map_ET_EXEC()` commence par déterminer l'intervalle mémoire couvrant l'ensemble des segments `PT_LOAD` de l'exécutable original.
 
-Elle tente ensuite de réserver cet intervalle avec un mapping anonyme, en utilisant le flag `MAP_FIXED_NOREPLACE`.
+Elle tente ensuite de réserver cet intervalle avec un mapping *anonyme*, en utilisant le *flag* `MAP_FIXED_NOREPLACE`.
 
-Ce flag demande au kernel de créer un mapping à l'adresse exacte que nous indiquons (toujours arrondie à la frontière de page), **mais de refuser l'opération si une région est déjà occupée**.
+Ce *flag* demande au kernel de créer un mapping à l'adresse exacte que nous indiquons (toujours arrondie à la frontière de page), **mais de refuser l'opération si une région est déjà occupée**.
 
 Si la réservation échoue, cela signifie qu'entre la page de l'adrese rensignée et la dernière page de l'intervalle, il y aurait un mapping qui serait écrasé. Nous ne pouvons donc pas poursuivre sans risquer de corrompre une région existante.
 
@@ -1319,7 +1319,7 @@ Il reste à créer les mappings et à y placer les données.
 
 Une solution évidente serait d'utiliser `mmap()` directement sur le fichier original, comme le fait généralement le kernel.
 
-Cependant, **notre fichier original n'existe plus sous la forme d'un fichier ouvert sur le disque** : nous l'avons reconstruit dans une région mémoire anonyme.
+Cependant, **notre fichier original n'existe plus sous la forme d'un fichier ouvert sur le disque** : nous l'avons reconstruit dans une région mémoire *anonyme*.
 
 Or, un mapping de fichier nécessite un *file descriptor* associé à un objet que le kernel peut mapper.
 
@@ -1329,11 +1329,11 @@ Nous avons déjà tous les octets du fichier accessibles en mémoire.
 
 Nous allons donc adopter une autre stratégie :
 
-1. Créer des mappings anonymes aux adresses de chargement des segments.
+1. Créer des mappings *anonymes* aux adresses de chargement des segments.
 
 2. Y copier les données nécessaires depuis notre représentation temporaire de l'ELF.
 
-3. Initialiser les éventuels zones BSS.
+3. Initialiser les éventuels zones *BSS*.
 
 4. Appliquer les permissions finales.
 
@@ -1349,7 +1349,7 @@ En effet, nos segments chargés auraient <u>uniquement</u> le contenu du fichier
 
 Comme nous l'avons expliqué précédemment, Linux mappe les segments par pages entières du fichier.
 
-Les zones de nos mappings anonymes situées en dehors des limites exactes des segments devraient donc contenir les données réellement présentes aux emplacements correspondants dans le fichier original, plutôt que des zéros.
+Les zones de nos mappings *anonymes* situées en dehors des limites exactes des segments devraient donc contenir les données réellement présentes aux emplacements correspondants dans le fichier original, plutôt que des zéros.
 
 Pour préserver cette particularité, il nous suffit donc d'étendre la copie aux forntières de page les plus proches.
 
@@ -1363,7 +1363,7 @@ Dans ce cas, nous savons que le segment doit contenir une région initialisée �
 
 Il suffit alors de remettre à zéro les bytes situés entre la fin de la partie du segment définie par `p_filesz` et la frontière de page suivante.
 
-Si le *bss* s'étend au-delà de cette page, les pages suivantes sont déjà initialisées à zéro, puisqu'elles ont été incluses dans notre mapping anonyme initial, dimensionné pour couvrir `p_memsz`.
+Si le *bss* s'étend au-delà de cette page, les pages suivantes sont déjà initialisées à zéro, puisqu'elles ont été incluses dans notre mapping *anonyme* initial, dimensionné pour couvrir `p_memsz`.
 
 C'est précisément ce qui nous permet de reproduire le comportement expliqué dans le schéma de chargement des segments présenté précédemment.
 
@@ -1431,7 +1431,7 @@ Linux peut également prendre en charge des interpréteurs `ET_EXEC`.
 
 Dans ce cas, leur chargement pose un problème supplémentaire : comme pour n'importe quel `ET_EXEC`, leurs segments doivent être placés à des adresses fixes.
 
-Notre packer ne connait pas, au moment du packing, le type de l'*interpreter* demandé par l'ELF qu'il pack, et encore moins le `p_vaddr` de ses segments.
+Notre *packer* ne connait pas, au moment du packing, le type de l'*interpreter* demandé par l'ELF qu'il pack, et encore moins le `p_vaddr` de ses segments.
 
 Lorsque notre ELF packé est entrain de charger un *interpreter* de type `ET_EXEC`, son mapping pourrait donc entrer en collision avec une région contenant le *stub*.
 
@@ -1447,7 +1447,7 @@ Nous y sommes presque.
 
 Nous avons chargé les segments de l'exécutable original et son éventuel interpréteur.
 
-Cependant, **la stack et l'*Auxiliary Vector* ont été préparés par le kernel pour notre ELF packé, et non pour l'exécutable original.**
+Cependant, **la *stack* et l'*Auxiliary Vector* ont été préparés par le kernel pour notre ELF packé, et non pour l'exécutable original.**
 
 Nous devons donc adapter cet environnement.
 
@@ -1459,7 +1459,7 @@ En effet, nous devrions notamment reproduire l'organisation de la pile, respecte
 
 Or, le kernel a déjà réalisé une grande partie de ce travail pour nous.
 
-Notre solution consiste donc à **conserver la stack originale construite par Linux, puis à modifier uniquement les informations nécessaires.**
+Notre solution consiste donc à **conserver la *stack* originale construite par Linux, puis à modifier uniquement les informations nécessaires.**
 
 C'est précisément pour cette raison que nous avions besoin de récupérer la valeur initiale de `RSP` dès la première instruction de notre *stub*.
 
@@ -1473,7 +1473,7 @@ Dans notre implémentation, nous modifions les 4 champs suivants :
 
   Cette adresse ne doit pas être confondue avec celle de notre représentation temporaire du fichier. Nous devons retrouver l'emplacement de la table dans les <u>segments réellement chargés</u>.
 
-> **NOTE :** La présence d'un segment `PT_PHDR` n'est pas obligatoire, auquel cas nous pouvons retrouver l'adresse mémoire de la *Program Header Table* en recherchant le segment `PT_LOAD` contenant cette table, dont l'offset dans le fichier est indiqué par le champ du *ELF Header* `e_phoff`.
+> **NOTE :** La présence d'un segment `PT_PHDR` n'est pas obligatoire, auquel cas nous pouvons retrouver l'adresse mémoire de la *Program Header Table* en recherchant le segment `PT_LOAD` contenant cette table, dont l'*offset* dans le fichier est indiqué par le champ du *ELF Header* `e_phoff`.
 
 - `AT_PHNUM`: doit contenir le nombre d'entrées de la *Program Header Table* originale.
 
@@ -1643,27 +1643,27 @@ Sinon, nous commençons directement l'exécution au `e_entry` original.
 
 ### Packer
 
-L'implémentation du packer étant relativement simple, nous entrerons moins dans les détails techniques que nous l'avons fait pour le *stub*. 
+L'implémentation du *packer* étant relativement simple, nous entrerons moins dans les détails techniques que nous l'avons fait pour le *stub*.
 
-Son rôle consiste à préparer le payload, récupérer le code du *stub*, puis assembler ces éléments dans un nouvel ELF. 
+Son rôle consiste à préparer le *payload*, récupérer le code du *stub*, puis assembler ces éléments dans un nouvel ELF.
 
 Son fonctionnement peut être décomposé en 5 étapes :
 
-- Ouverture et validation du fichier ELF à packer
+- Ouverture et validation du fichier ELF à *packer*
 
-- Compression et chiffrement des données de l'ELF et création du `payload_header_t` qui représente la métadata du payload.
+- Compression et chiffrement des données de l'ELF et création du `payload_header_t` qui représente la métadata du *payload*.
 
-- Recherche de la section `.stub` à l'intérieur du binaire même du packer, et extraction de son contenu.
+- Recherche de la *section* `.stub` à l'intérieur du binaire même du *packer*, et extraction de son contenu.
 
 - Création des structures *ELF Header* et  *Program Headers*.
 
-- Création d'un fichier d'output et copie de ces structures à son début, suivies du contenu de la section `.stub`, puis du payload packé.
+- Création d'un fichier d'output et copie de ces structures à son début, suivies du contenu de la *section* `.stub`, puis du *payload* packé.
 
 #### Lecture et validation du fichier original
 
-Après avoir ouvert et mappé l'entiereté du fichier à packer en mémoire avec `open()` et `mmap()`, nous procédons a quelques checks pour déterminer si le type d'executable est supporté : ELF `x86-64`, little-endian, de type `ET_EXEC` ou `ET_DYN`. 
+Après avoir ouvert et mappé l'entiereté du fichier à *packer* en mémoire avec `open()` et `mmap()`, nous procédons a quelques checks pour déterminer si le type d'executable est supporté : ELF `x86-64`, little-endian, de type `ET_EXEC` ou `ET_DYN`.
 
-Bien que l'integrité de l'ELF fourni en argument ne soit pas de notre responsabilité, nous effectuons tout de même quelques vérifications simples sur la cohérence de certains éléments, comme les headers, les limites des données qu’ils désignent, les contraintes d’alignement des segments, la présence d’un `e_entry` vers un segment exécutable...
+Bien que l'integrité de l'ELF fourni en argument ne soit pas de notre responsabilité, nous effectuons tout de même quelques vérifications simples sur la cohérence de certains éléments, comme les *headers*, les limites des données qu’ils désignent, les contraintes d’alignement des segments, la présence d’un `e_entry` vers un segment exécutable...
 
 #### Préparation du payload
 
@@ -1673,13 +1673,13 @@ Les données (compressées ou non) sont ensuite chiffrées avec l'algorithme *Ch
 
 > **NOTE :** Nous tentons de compresser les données avant de les chiffrer, car la compression repose sur l’exploitation de motifs récurrents. Or, les données chiffrées ou déjà compressées présentent peu de redondances, ce qui limite l’efficacité de la compression.
 
-Nous complétons enfin le `payload_header_t` avec le *flag* de compression à 1 ou 0, les tailles et l’offset nécessaires au *stub* pour retrouver et restaurer le fichier original.
+Nous complétons enfin le `payload_header_t` avec le *flag* de compression à 1 ou 0, les tailles et l’*offset* nécessaires au *stub* pour retrouver et restaurer le fichier original.
 
 La clé de chiffrement sera écrite dans `STDOUT` si l'ensemble des opérations sont un succes. Elle ne figurera pas dans l'ELF packé.
 
 #### Récupération du stub
 
-Comme nous l'avons vu précédement, la compilation du *stub* à généré un fichier `stub.elf`. Celui-ci contient une section `.stub` contenant le code machine et les données associées du *stub*, et peut être déplacé dans un autre ELF sans casser son execution.
+Comme nous l'avons vu précédement, la compilation du *stub* à généré un fichier `stub.elf`. Celui-ci contient une *section* `.stub` contenant le code machine et les données associées du *stub*, et peut être déplacé dans un autre ELF sans casser son execution.
 
 Après la compilation du *packer*, le Makefile complète le build par un appel à l'utilitaire `objcopy` :
 
@@ -1691,9 +1691,9 @@ $(PACKER): $(PACKER_OBJ) $(STUB)
 	@rm stub.bin
 ```
 
-Le premier `objcopy` extrait la section `.stub` de l'ELF `stub.bin`, et le deuxième ajoute cette section à l'executable du packer (`woody-woodpacker`).
+Le premier `objcopy` extrait la *section* `.stub` de l'ELF `stub.bin`, et le deuxième ajoute cette *section* à l'executable du *packer* (`woody-woodpacker`).
 
-> **NOTE :** Cette section sera seulement présente dans l'ELF avec une entrée valide dans la *Section Header Table*, mais n'appartiendra a aucun segment.
+> **NOTE :** Cette *section* sera seulement présente dans l'ELF avec une entrée valide dans la *Section Header Table*, mais n'appartiendra a aucun segment.
 
 ```
 $ readelf -SW ./woody-woodpacker
@@ -1706,19 +1706,19 @@ Section Headers:
 ...
 ```
 
-Pendant son exécution, le *pakcer* ouvre `/proc/self/exe` pour accéder à son propre fichier, puis recherche `.stub` dans sa *Section Header Table*. Grace à l'*offset* et à la taille de la section il pourra extraire le contenu exact du *stub* pour le copier dans l'ELF packé en construction.
+Pendant son exécution, le *pakcer* ouvre `/proc/self/exe` pour accéder à son propre fichier, puis recherche `.stub` dans sa *Section Header Table*. Grace à l'*offset* et à la taille de la *section* il pourra extraire le contenu exact du *stub* pour le copier dans l'ELF packé en construction.
 
 > **NOTE :** Seul le <u>contenu</u> sera copié dans le segment exécutable de l’ELF packé, qui ne possèdera pas de *Section Header Table*.
 
 #### Construction des headers et placement des segments
 
-Une fois les tailles du *stub* et du payload connues, nous pouvons construire l’*ELF Header* et les quatre *Program Headers*.
+Une fois les tailles du *stub* et du *payload* connues, nous pouvons construire l’*ELF Header* et les quatre *Program Headers*.
 
 Cette construction consiste simplement a remplir une structure `Elf64_Ehdr` et 4 structures `Elf64_Phdr` (décrites précedemment).
 
 Dans le fichier ELF packé, les différents contenus se suivent sans padding. En mémoire, nous devons cependant éviter que deux segments partagent une même page, pour pouvoir leur attribuer des permissions distinctes.
 
-Pour positionner chaque segment, nous arrondissons donc la fin du précédent au début de la page suivante disponible, puis ajoutons le décalage nécessaire pour conserver le même offset dans une page en mémoire et dans le fichier.
+Pour positionner chaque segment, nous arrondissons donc la fin du précédent au début de la page suivante disponible, puis ajoutons le décalage nécessaire pour conserver le même *offset* dans une page en mémoire et dans le fichier.
 
 Reprenons l'exemple d'ELF packé de tout à l'heure :
 
@@ -1731,7 +1731,7 @@ Program Headers:
   GNU_STACK      0x000000 0x0000000000000000 0x0000000000000000 0x000000 0x000000 RW  0       <-- Metadata to set permission on stack segment
 ```
 
-Les headers occupent `0x120` octets. Le *stub* commence donc à l'*offset* `0x120` dans le fichier, mais nous arrondissons jusqu'au début de la page suivante (donc `0x1000`) pui ajoutons son *offset* fichier :`0x1120`. Il conserve donc son décalage de `0x120` tout en commençant sur une page distincte.
+Les *headers* occupent `0x120` octets. Le *stub* commence donc à l'*offset* `0x120` dans le fichier, mais nous arrondissons jusqu'au début de la page suivante (donc `0x1000`) pui ajoutons son *offset* fichier :`0x1120`. Il conserve donc son décalage de `0x120` tout en commençant sur une page distincte.
 
 Nous devons ensuite tenir compte du type de l’ELF original.
 
@@ -1739,7 +1739,7 @@ Pour un `ET_DYN`, les adresses sont construites à partir de zéro. Le kernel d�
 
 Pour un `ET_EXEC`, les segments du programme original devront retrouver leurs adresses fixes. Nous devons donc placer les segments de l’ELF packé ailleurs, afin que leur chargement n’écrase pas le *stub*. 
 
-Le packer calcule la plage mémoire couvrant les segments originaux, puis place ceux de l’ELF packé immédiatement après. Si ces nouvelles adresses dépassent les limites retenues par notre implémentation, le packing est refusé.
+Le *packer* calcule la plage mémoire couvrant les segments originaux, puis place ceux de l’ELF packé immédiatement après. Si ces nouvelles adresses dépassent les limites retenues par notre implémentation, le packing est refusé.
 
 Ainsi, le mapping final ressemblera en général à ceci :
 
@@ -1756,9 +1756,9 @@ Enfin, le champ `e_entry` de l'*ELF Header* est renseigné avec l’adresse du d
 
 #### Écriture de l’ELF packé
 
-Nous créons un nouveau fichier appelé `woody`, et nous écrivons toute la data que nous avons préparé dans l'ordre prévu : la structure `Elf64_Ehdr`, les 4 structures `Elf64_Phdr`, la data du *stub*, et enfin la structure `payload_header_t` suivie de la data du payload packé.
+Nous créons un nouveau fichier appelé `woody`, et nous écrivons toute la data que nous avons préparé dans l'ordre prévu : la structure `Elf64_Ehdr`, les 4 structures `Elf64_Phdr`, la data du *stub*, et enfin la structure `payload_header_t` suivie de la data du *payload* packé.
 
-Le fichier `woody` est alors prêt et le packer affiche la clé nécessaire à son lancement.
+Le fichier `woody` est alors prêt et le *packer* affiche la clé nécessaire à son lancement.
 
 ### Limitations
 
@@ -1780,7 +1780,7 @@ Plusieurs différences méritent d'être mentionnées.
 
 - **Les types d'interpréteurs pris en charge.** Nous refusons actuellement les interpréteurs `ET_EXEC`, même si Linux les prend en charge.
 
-- **Refus des fichiers ELF dont les bits Set-UID (SUID) ou Set-GID (SGID) sont activés.** En effet, le fichier ELF généré par notre packer appartiendra à l'utilisateur et au groupe ayant exécuté le packer. Conserver ces permissions pourrait donc modifier les privilèges avec lesquels le programme s'exécute.
+- **Refus des fichiers ELF dont les bits Set-UID (SUID) ou Set-GID (SGID) sont activés.** En effet, le fichier ELF généré par notre *packer* appartiendra à l'utilisateur et au groupe ayant exécuté le *packer*. Conserver ces permissions pourrait donc modifier les privilèges avec lesquels le programme s'exécute.
 
 - **Confiance relative en l'ELF original.** Bien que notre *packer* effectue une validation basique, notre chargeur ne prétend pas reproduire l'intégralité des vérifications du kernel. Particulièrement, le *stub* part du principe que l'*interpreter* éventuel dans un format ELF correct et fonctionnel.
 

@@ -1,0 +1,160 @@
+@media screen {
+  :root {
+    --toc-font-size-adjustment: 2px;
+  }
+
+  :root[data-has-toc]:not([data-has-sidebar]) {
+    --sl-content-width: calc(45rem + 20ch);
+  }
+
+  .sl-markdown-content {
+    font-size: calc(var(--sl-text-body) + 2px);
+  }
+
+  .sl-markdown-content :is(.expressive-code, .expressive-code > .frame, pre) {
+    min-inline-size: 0;
+    max-inline-size: 100%;
+  }
+
+  .sl-markdown-content pre {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+  }
+
+  #starlight__on-this-page--mobile .toggle {
+    font-size: calc(var(--sl-text-xs) + var(--toc-font-size-adjustment));
+  }
+
+  #starlight__mobile-toc a {
+    font-size: calc(var(--sl-text-sm) + var(--toc-font-size-adjustment));
+  }
+
+  .header:has(> .title-wrapper) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(max-content, 1fr);
+  }
+
+  .header > .right-group {
+    justify-self: end;
+    margin-inline-end: 0.5rem;
+  }
+
+  .header starlight-lang-select select {
+    min-inline-size: calc(
+      9ch + var(--sl-label-icon-size) + var(--sl-caret-size) +
+      2 * var(--sl-inline-padding) + 0.5rem
+    );
+  }
+}
+
+@media screen and (min-width: 50rem) {
+  site-search button[data-open-modal] {
+    width: clamp(11rem, 25vw, 22rem);
+  }
+}
+
+@media screen and (min-width: 50rem) and (max-width: 64rem) {
+  [data-theme='terminal'] .site-title {
+    font-size: var(--sl-text-xl);
+  }
+
+  [data-theme='terminal'] .woody-theme-picker select {
+    appearance: none;
+    width: 2.5rem;
+    padding-inline: 0;
+    color: transparent;
+  }
+}
+
+@media screen and (min-width: 72rem) {
+  [data-has-toc]:not([data-has-sidebar]) .main-pane {
+    min-width: 0;
+  }
+
+  [data-has-toc]:not([data-has-sidebar]) .right-sidebar-container {
+    order: 0;
+    width: 16rem;
+    flex-shrink: 0;
+    margin-inline-start: 0;
+  }
+
+  [data-has-toc]:not([data-has-sidebar]) .right-sidebar {
+    position: sticky;
+    border-inline-start: 0;
+    border-inline-end: 1px solid var(--sl-color-hairline);
+  }
+
+  [data-has-toc]:not([data-has-sidebar]) .right-sidebar-panel {
+    padding-inline: 0.5rem;
+  }
+
+  [data-has-toc]:not([data-has-sidebar]) .right-sidebar-panel > .sl-container {
+    width: 100%;
+    max-width: none;
+  }
+
+  #starlight__on-this-page {
+    font-size: calc(var(--sl-text-h5) + var(--toc-font-size-adjustment));
+    text-align: center;
+  }
+
+  starlight-toc a {
+    font-size: calc(var(--sl-text-xs) + var(--toc-font-size-adjustment));
+  }
+}
+
+@media screen and (max-width: 49.999rem) {
+  :root:not([data-has-sidebar]) .site-title {
+    font-size: var(--sl-text-base);
+    line-height: 1.2;
+    white-space: normal;
+  }
+
+  /* Starlight normally puts these controls in the mobile navigation menu. */
+  :root:not([data-has-sidebar]) .header .right-group {
+    display: flex;
+    gap: 0.625rem;
+  }
+
+  :root:not([data-has-sidebar]) .header .social-icons {
+    gap: 0.5rem;
+  }
+
+  :root:not([data-has-sidebar]) .woody-theme-picker select {
+    width: 2.5rem;
+    margin-inline: 0;
+    padding-inline: 0;
+    color: transparent;
+  }
+
+  :root:not([data-has-sidebar]) starlight-lang-select select {
+    font-size: var(--sl-text-sm);
+  }
+}
+
+@media screen and (max-width: 28rem) {
+  :root:not([data-has-sidebar]) {
+    --sl-nav-gap: 0.5rem;
+  }
+
+  :root:not([data-has-sidebar]) .site-title {
+    font-size: var(--sl-text-sm);
+  }
+}
+
+@media screen and (max-width: 32rem) {
+  :root:not([data-has-sidebar]) .header .right-group {
+    gap: 0.375rem;
+  }
+
+  :root:not([data-has-sidebar]) .header .social-icons::after {
+    display: none;
+  }
+
+  :root:not([data-has-sidebar]) .woody-theme-picker select {
+    width: 2.25rem;
+    margin-inline: 0;
+    padding-inline: 0;
+    color: transparent;
+  }
+}

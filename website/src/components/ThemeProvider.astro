@@ -1,0 +1,43 @@
+<script is:inline>
+  (() => {
+    const storageKey = 'woody-theme';
+    const selector = '.woody-theme-picker select';
+    const systemTheme = matchMedia('(prefers-color-scheme: light)');
+    const choices = ['terminal', 'dark', 'light', 'auto'];
+    let preference = 'terminal';
+
+    try {
+      const saved = localStorage.getItem(storageKey);
+      if (choices.includes(saved)) preference = saved;
+    } catch {
+      // The selector still works when browser storage is unavailable.
+    }
+
+    function applyTheme() {
+      document.documentElement.dataset.theme =
+        preference === 'auto' ? (systemTheme.matches ? 'light' : 'dark') : preference;
+
+      for (const select of document.querySelectorAll(selector)) {
+        select.value = preference;
+      }
+    }
+
+    applyTheme();
+    document.addEventListener('DOMContentLoaded', applyTheme, { once: true });
+    window.addEventListener('pageshow', applyTheme);
+    systemTheme.addEventListener('change', applyTheme);
+
+    document.addEventListener('change', ({ target }) => {
+      if (!(target instanceof HTMLSelectElement) || !target.matches(selector)) return;
+      if (!choices.includes(target.value)) return;
+
+      preference = target.value;
+      applyTheme();
+      try {
+        localStorage.setItem(storageKey, preference);
+      } catch {
+        // Keep the current choice in memory for this page.
+      }
+    });
+  })();
+</script>

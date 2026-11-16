@@ -1,0 +1,88 @@
+/* Palette from MarkText's Cyberdream theme, adapted to Starlight's rendered Markdown. */
+:root[data-theme='dark'] {
+  --cyberdream-red: #ff6e5e;
+  --cyberdream-blue: #5ea1ff;
+  --cyberdream-green: #5eff6c;
+  --cyberdream-cyan: #5ef1ff;
+  --cyberdream-purple: #bd5eff;
+  --cyberdream-orange: #ffbd5e;
+
+  --sl-color-black: #16181a;
+  --sl-color-gray-6: #1e2124;
+  --sl-color-gray-5: #2a2e32;
+  --sl-color-gray-4: #3c4048;
+  --sl-color-gray-3: #999;
+  --sl-color-gray-2: #ccc;
+  --sl-color-gray-1: #fff;
+  --sl-color-white: #fff;
+  --sl-color-accent: var(--cyberdream-blue);
+  --sl-color-accent-high: var(--cyberdream-blue);
+  --sl-color-accent-low: #1f3048;
+  --sl-color-text: var(--sl-color-white);
+  --sl-color-text-invert: var(--sl-color-black);
+  --sl-color-bg-nav: #121416;
+  --sl-color-bg-sidebar: #121416;
+  --sl-color-bg-inline-code: var(--sl-color-gray-6);
+  --sl-color-hairline: var(--sl-color-gray-5);
+  --sl-color-hairline-shade: #0a0b0c;
+  --sl-color-green: var(--cyberdream-green);
+  --sl-color-blue: var(--cyberdream-blue);
+  --sl-color-orange: var(--cyberdream-orange);
+  --sl-color-purple: var(--cyberdream-purple);
+  --sl-color-red: var(--cyberdream-red);
+}
+
+[data-theme='dark'] .right-sidebar {
+  background-color: var(--sl-color-bg-sidebar);
+}
+
+[data-theme='dark'] site-search button[data-open-modal] {
+  background-color: var(--sl-color-gray-6);
+}
+
+[data-theme='dark'] main h1 {
+  color: var(--cyberdream-red);
+}
+
+[data-theme='dark'] .sl-markdown-content {
+  h2 { color: var(--cyberdream-blue); }
+  h3 { color: var(--cyberdream-green); }
+  h4 { color: var(--cyberdream-cyan); }
+  h5 { color: var(--cyberdream-purple); }
+  h6 { color: var(--cyberdream-orange); }
+
+  strong {
+    color: var(--sl-color-white);
+  }
+
+  em {
+    color: var(--cyberdream-purple);
+  }
+
+  li::marker {
+    color: var(--cyberdream-green);
+  }
+
+  blockquote {
+    border-color: var(--sl-color-gray-4);
+    color: var(--sl-color-gray-3);
+  }
+
+  :not(pre) > code {
+    color: var(--sl-color-white);
+  }
+
+  del {
+    color: var(--cyberdream-red);
+  }
+
+  mark {
+    background: color-mix(in srgb, var(--cyberdream-blue) 35%, transparent);
+    color: var(--sl-color-white);
+  }
+
+  ::selection {
+    background: #2d3035;
+    color: var(--sl-color-white);
+  }
+}

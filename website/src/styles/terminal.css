@@ -1,0 +1,162 @@
+/* Adapted from terminal-custom.css for Starlight's page and Markdown components. */
+:root[data-theme='terminal'] {
+  --term-bg: #0b0f0c;
+  --term-fg: #b7f5c2;
+  --term-muted: #8fa997;
+  --term-accent: #33d17a;
+  --term-code-bg: #101a13;
+  --term-border: #254630;
+  --term-h1: #e7ffea;
+  --term-h2: #6bdac3;
+  --term-h3: #f0c674;
+  --term-h4: #c8b1ff;
+  --term-italic: #f3a887;
+  --term-bold: #e9ffbf;
+  --term-link: #7bc8ff;
+  --toc-font-size-adjustment: 1px;
+
+  --sl-font: 'JetBrains Mono Variable', 'DejaVu Sans Mono', monospace;
+  --sl-font-mono: var(--sl-font);
+  --sl-color-white: var(--term-h1);
+  --sl-color-gray-1: var(--term-h1);
+  --sl-color-gray-2: var(--term-fg);
+  --sl-color-gray-3: var(--term-muted);
+  --sl-color-gray-4: #50785c;
+  --sl-color-gray-5: var(--term-border);
+  --sl-color-gray-6: var(--term-code-bg);
+  --sl-color-black: var(--term-bg);
+  --sl-color-accent: var(--term-accent);
+  --sl-color-accent-high: var(--term-accent);
+  --sl-color-accent-low: #173622;
+  --sl-color-text: var(--term-fg);
+  --sl-color-text-invert: var(--term-bg);
+  --sl-color-bg-nav: var(--term-code-bg);
+  --sl-color-bg-sidebar: var(--term-bg);
+  --sl-color-text-accent: var(--term-link);
+}
+
+[data-theme='terminal'] .right-sidebar {
+  background: var(--sl-color-bg-sidebar);
+}
+
+[data-theme='terminal'] .site-title,
+[data-theme='terminal'] mobile-starlight-toc .display-current,
+[data-theme='terminal'] :is(starlight-toc, mobile-starlight-toc) a[aria-current='true'] {
+  color: var(--term-accent);
+}
+
+[data-theme='terminal'] mobile-starlight-toc a[aria-current='true']::after {
+  background-color: var(--term-accent);
+}
+
+[data-theme='terminal'] main {
+  :is(h1, h2, h3, h4, h5, h6) {
+    font-weight: 700;
+    line-height: 1.35;
+    letter-spacing: 0.012em;
+  }
+
+  :is(h1, h2) {
+    text-transform: uppercase;
+  }
+
+  h1 {
+    color: var(--term-h1);
+    font-size: 1.9rem;
+  }
+
+  h1::before {
+    content: '> ' / '';
+    color: var(--term-accent);
+  }
+
+  h2 {
+    color: var(--term-h2);
+    font-size: 1.35rem;
+  }
+
+  h2::before {
+    content: '$ ' / '';
+    color: var(--term-accent);
+  }
+
+  h3 {
+    color: var(--term-h3);
+    font-size: 1.14rem;
+  }
+
+  :is(h4, h5, h6) {
+    color: var(--term-h4);
+    font-size: 1.02rem;
+  }
+}
+
+[data-theme='terminal'] .sl-markdown-content {
+  em {
+    color: var(--term-italic);
+  }
+
+  strong {
+    color: var(--term-bold);
+  }
+
+  a:not(:where(.sl-anchor-link, .not-content *)) {
+    color: var(--term-link);
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 4px;
+  }
+
+  a:is(:hover, :focus-visible):not(:where(.sl-anchor-link, .not-content *)) {
+    color: #c2eaff;
+    text-decoration-thickness: 2px;
+  }
+
+  :not(pre) > code:not(:where(.expressive-code *)) {
+    background: var(--term-code-bg);
+    color: #86e7a4;
+    padding: 0.16em 0.38em;
+    font-size: 0.92em;
+  }
+
+  blockquote {
+    border-inline-start: 3px solid var(--term-accent);
+    padding: 0.25em 1.25em;
+    color: #a5c9ac;
+    background: #0f1811;
+  }
+
+  li::marker {
+    color: var(--term-accent);
+  }
+
+  hr {
+    border: 0;
+    border-top: 1px dashed var(--term-border);
+  }
+
+  table {
+    border-collapse: collapse;
+  }
+
+  :is(th, td) {
+    border: 1px solid var(--term-border);
+    padding: 0.5rem 0.75rem;
+  }
+
+  th {
+    color: var(--term-h2);
+    background: var(--term-code-bg);
+  }
+
+  ::selection {
+    background: #2f7250;
+    color: white;
+  }
+}
+
+@media (max-width: 650px) {
+  [data-theme='terminal'] main h1 {
+    font-size: 1.55rem;
+  }
+}
