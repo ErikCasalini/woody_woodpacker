@@ -109,7 +109,7 @@ static stub_error_t	apply_permissions(const elf_info_t *elf, size_t page_size)
 
 /* In order to find the actual address of the ORIGINAL ELF's program header
  table once it has been mapped, we cannot rely on the presence of a PT_PHDR
- segment, since PT_PHDR is not required by the GABI.
+ segment, since PT_PHDR is not required by the ABI.
  Therefore, we need to determine if a PT_LOAD segment contains the file
  offset of the program header table, or set it to load_bias if not found
  (linux seems doing this). */

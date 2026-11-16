@@ -3,7 +3,7 @@
 
 /* Returns a struct of mapping range covering all PT_LOAD segments,
 including gaps between them and page-alignment padding.
-Accordingly to the GABI, PT_LOAD entries are sorted by ascending p_vaddr,
+Accordingly to the ABI, PT_LOAD entries are sorted by ascending p_vaddr,
 so the first one gives the lower bound. The upper bound is the highest
 p_vaddr + p_memsz among all PT_LOAD segments, rounded up to a page
 boundary. */
