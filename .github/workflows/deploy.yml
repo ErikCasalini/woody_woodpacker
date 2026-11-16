@@ -1,4 +1,4 @@
-name: Deploy the write-up to GitHub Pages
+name: Deploy write-ups to GitHub Pages
 
 on:
   push:
