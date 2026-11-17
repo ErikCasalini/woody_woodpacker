@@ -46,7 +46,7 @@ Pour pallier ce problème (entre autres), les systèmes modernes utilisent un m�
 
 #### Les adresses virtuelles
 
-En vulgarisant on peut dire qu'une adresses virtuelle est simplement un "nombre/identifiant" servant a retrouver la bonne adresse physique. Sur les architectures `x86-64`, elles sont représentées sur 64 bits et sont comprises généralement dans une plage allant de `0x0` à `0x00007fffffffefff`. Les premières plages sont souvent interdites, et ces limites peuvent varier en fonction de la configuration du système).
+En vulgarisant on peut dire qu'une adresses virtuelle est simplement un "nombre/identifiant" servant a retrouver la bonne adresse physique. Sur les architectures `x86-64`, elles sont représentées sur 64 bits et sont comprises généralement dans une plage allant de `0x0` à `0x00007fffffffefff`. Les premières plages sont souvent interdites, et ces limites peuvent varier en fonction de la configuration du système.
 
 Lorsque Linux exécute un processus, il lui fournit un ensemble de structures appelées *page tables* (nous ne rentrerons pas dans les détails techniques ici). Ces structures ont pour but de faire le lien entre les adresses virtuelles et les adresses physiques au sein d'un processus. A l'intérieur de ces tables, chaque adresse virtuelle se voit en général attribuée un adresse physique dans la RAM. Si le kernel a besoin de réorganiser la RAM, il n'aura qu'a mettre a jour l'adresse physique associée à l'adresse virtuelle. Ainsi, lorsqu'on "déréférence" une adresse virtuelle, le processeur va chercher les données présentes à l'adresse physique associée à cette adresse virtuelle (ou déclancher un `PAGE FAULT` dans le cas ou aucne adresse physique n'est spécifiée).
 

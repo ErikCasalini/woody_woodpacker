@@ -46,7 +46,7 @@ To address this problem (among others), modern systems use a mechanism called vi
 
 #### Virtual addresses
 
-To put it simply, we can say that a virtual address is just a "number/identifier" used to find the correct physical address. On `x86-64` architectures, they are represented on 64 bits and are generally within a range from `0x0` to `0x00007fffffffefff`. The first ranges are often forbidden, and these limits may vary depending on the system configuration).
+To put it simply, we can say that a virtual address is just a "number/identifier" used to find the correct physical address. On `x86-64` architectures, they are represented on 64 bits and are generally within a range from `0x0` to `0x00007fffffffefff`. The first ranges are often forbidden, and these limits may vary depending on the system configuration.
 
 When Linux executes a process, it provides it with a set of structures called *page tables* (we won't go into the technical details here). These structures are intended to link virtual addresses to physical addresses within a process. Inside these tables, each virtual address is generally assigned a physical address in RAM. If the kernel needs to reorganize RAM, it only has to update the physical address associated with the virtual address. Thus, when we "dereference" a virtual address, the processor fetches the data at the physical address associated with that virtual address (or triggers a `PAGE FAULT` if no physical address is specified).
 
