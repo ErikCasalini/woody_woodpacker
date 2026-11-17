@@ -10,6 +10,8 @@
   --term-h2: #6bdac3;
   --term-h3: #f0c674;
   --term-h4: #c8b1ff;
+  --term-h5: #D7A4C7;
+  --term-h6: #93B6BC;
   --term-italic: #f3a887;
   --term-bold: #e9ffbf;
   --term-link: #7bc8ff;
@@ -86,9 +88,12 @@
   }
 
   :is(h4, h5, h6) {
-    color: var(--term-h4);
     font-size: 1.02rem;
   }
+
+  h4 { color: var(--term-h4); }
+  h5 { color: var(--term-h5); }
+  h6 { color: var(--term-h6); }
 }
 
 [data-theme='terminal'] .sl-markdown-content {
